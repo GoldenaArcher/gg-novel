@@ -1,0 +1,78 @@
+@use 'sass:map';
+
+$font-stack: 'Inter', 'Noto Sans SC', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+$mono-stack:
+  'JetBrains Mono',
+  ui-monospace,
+  SFMono-Regular,
+  Menlo,
+  Monaco,
+  Consolas,
+  'Liberation Mono',
+  'Courier New',
+  monospace;
+
+$radius-full: 999px;
+$radius-xl: 20px;
+$radius-lg: 18px;
+$radius-md: 16px;
+
+$theme-dark: (
+  background: radial-gradient(circle at top, #2c2a4a 0%, #0f101b 45%, #05060c 100%),
+  text: #f4f6fb,
+  text-muted: rgba(244, 246, 251, 0.65),
+  panel-bg: rgba(18, 21, 34, 0.85),
+  panel-border: rgba(244, 246, 251, 0.08),
+  accent-gradient: linear-gradient(120deg, #7b5bff, #ff85c2),
+  ghost-border: rgba(244, 246, 251, 0.2),
+  ghost-text: #f4f6fb,
+  card-bg: rgba(244, 246, 251, 0.04),
+  card-border: rgba(244, 246, 251, 0.06),
+  chapter-bg: rgba(244, 246, 251, 0.04),
+  chapter-active-border: rgba(123, 91, 255, 0.6),
+  chapter-active-bg: rgba(123, 91, 255, 0.18),
+  editor-bg: rgba(5, 7, 14, 0.65),
+  progress-track: rgba(244, 246, 251, 0.08)
+);
+
+$theme-light: (
+  background: radial-gradient(circle at top, #f4f6fb 0%, #dfe2ff 40%, #d1d8ff 100%),
+  text: #101223,
+  text-muted: rgba(16, 18, 35, 0.65),
+  panel-bg: rgba(255, 255, 255, 0.9),
+  panel-border: rgba(16, 18, 35, 0.08),
+  accent-gradient: linear-gradient(120deg, #7356ff, #ff6fb7),
+  ghost-border: rgba(16, 18, 35, 0.14),
+  ghost-text: #101223,
+  card-bg: rgba(16, 18, 35, 0.04),
+  card-border: rgba(16, 18, 35, 0.1),
+  chapter-bg: rgba(16, 18, 35, 0.04),
+  chapter-active-border: rgba(115, 86, 255, 0.4),
+  chapter-active-bg: rgba(115, 86, 255, 0.12),
+  editor-bg: rgba(255, 255, 255, 0.95),
+  progress-track: rgba(16, 18, 35, 0.08)
+);
+
+@mixin theme-vars($theme) {
+  --background-base: #{map.get($theme, background)};
+  --color-text: #{map.get($theme, text)};
+  --color-muted: #{map.get($theme, text-muted)};
+  --panel-bg: #{map.get($theme, panel-bg)};
+  --panel-border: #{map.get($theme, panel-border)};
+  --accent-gradient: #{map.get($theme, accent-gradient)};
+  --ghost-border: #{map.get($theme, ghost-border)};
+  --ghost-text: #{map.get($theme, ghost-text)};
+  --card-bg: #{map.get($theme, card-bg)};
+  --card-border: #{map.get($theme, card-border)};
+  --chapter-bg: #{map.get($theme, chapter-bg)};
+  --chapter-active-border: #{map.get($theme, chapter-active-border)};
+  --chapter-active-bg: #{map.get($theme, chapter-active-bg)};
+  --editor-bg: #{map.get($theme, editor-bg)};
+  --progress-track: #{map.get($theme, progress-track)};
+  --radius-full: #{$radius-full};
+  --radius-xl: #{$radius-xl};
+  --radius-lg: #{$radius-lg};
+  --radius-md: #{$radius-md};
+  --font-base: #{$font-stack};
+  --font-mono: #{$mono-stack};
+}

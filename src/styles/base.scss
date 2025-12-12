@@ -1,0 +1,46 @@
+@use './tokens' as tokens;
+
+:root {
+  font-family: tokens.$font-stack;
+  line-height: 1.6;
+  font-weight: 400;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  @include tokens.theme-vars(tokens.$theme-dark);
+}
+
+[data-theme='light'] {
+  @include tokens.theme-vars(tokens.$theme-light);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  background: var(--background-base);
+  color: var(--color-text);
+  font-family: var(--font-base);
+}
+
+a {
+  color: inherit;
+}
+
+button {
+  font-family: inherit;
+  border: none;
+  background: none;
+}
