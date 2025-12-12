@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react'
 import { Project } from '../../../shared/types'
 
 interface LibrarySidebarProps {
@@ -6,6 +7,9 @@ interface LibrarySidebarProps {
   activeChapterId: string
   onProjectSelect: (projectId: string) => void
   onChapterSelect: (chapterId: string) => void
+  onCreateProject: (title: string) => void | Promise<void>
+  onCreateChapter: () => void
+  onOpenProjectManager: () => void
 }
 
 const statusLabel: Record<Project['chapters'][number]['status'], string> = {
@@ -19,9 +23,37 @@ export const LibrarySidebar = ({
   activeProjectId,
   activeChapterId,
   onProjectSelect,
-  onChapterSelect
+  onChapterSelect,
+  onCreateProject,
+  onCreateChapter,
+  onOpenProjectManager
 }: LibrarySidebarProps) => {
   const activeProject = projects.find((project) => project.id === activeProjectId)
+  const [creatingProject, setCreatingProject] = useState(false)
+  const [newProjectTitle, setNewProjectTitle] = useState('')
+  const newProjectInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (creatingProject) {
+      setNewProjectTitle('')
+      newProjectInputRef.current?.focus()
+    }
+  }, [creatingProject])
+
+  const cancelCreateProject = () => {
+    setCreatingProject(false)
+    setNewProjectTitle('')
+  }
+
+  const submitCreateProject = async () => {
+    const trimmed = newProjectTitle.trim()
+    if (!trimmed) {
+      cancelCreateProject()
+      return
+    }
+    await onCreateProject(trimmed)
+    cancelCreateProject()
+  }
 
   return (
     <aside className="panel sidebar">
@@ -32,9 +64,40 @@ export const LibrarySidebar = ({
 
       <div className="section-header">
         <p>作品库</p>
-        <button className="mini ghost">管理</button>
+        <div className="section-actions">
+          <button className="mini ghost" type="button" onClick={onOpenProjectManager}>
+            管理
+          </button>
+          <button className="mini ghost" type="button" onClick={() => setCreatingProject(true)} disabled={creatingProject}>
+            新建作品
+          </button>
+        </div>
       </div>
       <div className="project-switcher">
+        {creatingProject && (
+          <div className="project-pill creating">
+            <input
+              ref={newProjectInputRef}
+              value={newProjectTitle}
+              placeholder="输入作品名称"
+              onChange={(event) => setNewProjectTitle(event.target.value)}
+              onBlur={() => {
+                if (!newProjectTitle.trim()) {
+                  cancelCreateProject()
+                }
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault()
+                  submitCreateProject()
+                } else if (event.key === 'Escape') {
+                  event.preventDefault()
+                  cancelCreateProject()
+                }
+              }}
+            />
+          </div>
+        )}
         {projects.map((project) => (
           <button
             key={project.id}
@@ -46,6 +109,13 @@ export const LibrarySidebar = ({
           </button>
         ))}
       </div>
+
+      {projects.length === 0 && (
+        <div className="empty-state">
+          <p>暂无作品</p>
+          <p className="muted">点击“新建作品”后即可创建并开始管理您的小说项目。</p>
+        </div>
+      )}
 
       {activeProject && (
         <>
@@ -64,7 +134,9 @@ export const LibrarySidebar = ({
                 <strong>{activeProject.stats.characters}</strong>
               </div>
             </div>
-            <button className="ghost">新建章节</button>
+            <button className="ghost" type="button" onClick={onCreateChapter} disabled={!activeProject}>
+              新建章节
+            </button>
           </div>
 
           <div className="section-header">

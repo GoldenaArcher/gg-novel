@@ -1,3 +1,5 @@
+export type ThemeMode = 'dark' | 'light'
+
 export type ChapterStatus = 'outline' | 'draft' | 'final'
 
 export interface Chapter {
@@ -9,6 +11,7 @@ export interface Chapter {
   mood: string
   draft: string
   summary: string
+  autosaveTimestamp?: number
 }
 
 export interface Note {

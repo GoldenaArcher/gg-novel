@@ -1,6 +1,15 @@
-import { app, BrowserWindow } from 'electron'
+import { app, BrowserWindow, ipcMain } from 'electron'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
+import {
+  autosaveChapter,
+  createChapter,
+  createProject,
+  deleteProject,
+  listProjects,
+  renameProject,
+  saveChapter
+} from './services/projectStore'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -23,6 +32,50 @@ export const RENDERER_DIST = path.join(process.env.APP_ROOT, 'dist')
 process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL ? path.join(process.env.APP_ROOT, 'public') : RENDERER_DIST
 
 let win: BrowserWindow | null
+
+const registerIpcHandlers = () => {
+  ipcMain.handle('projects:list', async () => {
+    const projects = await listProjects()
+    return projects
+  })
+
+  ipcMain.handle('projects:create', async (_event, payload: { title: string }) => {
+    const project = await createProject(payload.title)
+    return project
+  })
+
+  ipcMain.handle(
+    'chapters:create',
+    async (_event, payload: { projectId: string; title: string }) => {
+      const project = await createChapter(payload.projectId, payload.title)
+      return project
+    }
+  )
+
+  ipcMain.handle(
+    'chapters:save',
+    async (_event, payload: { projectId: string; chapterId: string; content: string }) => {
+      const project = await saveChapter(payload.projectId, payload.chapterId, payload.content)
+      return project
+    }
+  )
+
+  ipcMain.handle(
+    'chapters:autosave',
+    async (_event, payload: { projectId: string; chapterId: string; content: string }) => {
+      return autosaveChapter(payload.projectId, payload.chapterId, payload.content)
+    }
+  )
+
+  ipcMain.handle('projects:rename', async (_event, payload: { projectId: string; title: string }) => {
+    return renameProject(payload.projectId, payload.title)
+  })
+
+  ipcMain.handle('projects:delete', async (_event, payload: { projectId: string }) => {
+    await deleteProject(payload.projectId)
+    return true
+  })
+}
 
 function createWindow() {
   win = new BrowserWindow({
@@ -63,4 +116,7 @@ app.on('activate', () => {
   }
 })
 
-app.whenReady().then(createWindow)
+app.whenReady().then(() => {
+  registerIpcHandlers()
+  createWindow()
+})

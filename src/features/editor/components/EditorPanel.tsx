@@ -1,13 +1,24 @@
-import { Chapter } from '../../../shared/types'
+import { Chapter, ThemeMode } from '../../../shared/types'
 
 interface EditorPanelProps {
   projectTitle?: string
   chapter?: Chapter
   draftText: string
   onDraftChange: (value: string) => void
+  theme: ThemeMode
+  onToggleTheme: () => void
+  onSaveChapter: () => void
 }
 
-export const EditorPanel = ({ projectTitle, chapter, draftText, onDraftChange }: EditorPanelProps) => (
+export const EditorPanel = ({
+  projectTitle,
+  chapter,
+  draftText,
+  onDraftChange,
+  theme,
+  onToggleTheme,
+  onSaveChapter
+}: EditorPanelProps) => (
   <main className="panel editor-panel">
     <header className="editor-header">
       <div>
@@ -15,6 +26,12 @@ export const EditorPanel = ({ projectTitle, chapter, draftText, onDraftChange }:
         <h1>{chapter?.title ?? '选择一个章节开始写作'}</h1>
       </div>
       <div className="editor-actions">
+        <button className="ghost" onClick={onToggleTheme}>
+          {theme === 'dark' ? '切换到亮色' : '切换到暗色'}
+        </button>
+        <button className="ghost" onClick={onSaveChapter} disabled={!chapter}>
+          保存章节
+        </button>
         <button className="ghost">历史版本</button>
         <button className="primary">专注模式</button>
       </div>

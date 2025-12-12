@@ -1,30 +1,14 @@
-# React + TypeScript + Vite
+# GG Novel Desktop
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A modern Electron + React writing environment tailored for multi-project novel workflows. The renderer uses Vite, TypeScript, and a Sass-powered design system that supports light/dark themes, while the Electron main process handles the desktop shell and packaging.
 
-Currently, two official plugins are available:
+See `CONTEXT.md` for a detailed directory walkthrough and per-feature explanation.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react/README.md) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## Scripts
 
-## Expanding the ESLint configuration
+- `npm run dev`: Starts Vite dev server with Electron in watch mode.
+- `npm run build`: Type-checks the project, builds the renderer and Electron bundles, and then runs `electron-builder` (requires network to download platform binaries).
+- `npm run preview`: Serves the built renderer bundle for quick inspection.
+- `npm run lint`: Runs ESLint with the repo’s TypeScript/React rules.
 
-If you are developing a production application, we recommend updating the configuration to enable type aware lint rules:
-
-- Configure the top-level `parserOptions` property like this:
-
-```js
-export default {
-  // other rules...
-  parserOptions: {
-    ecmaVersion: 'latest',
-    sourceType: 'module',
-    project: ['./tsconfig.json', './tsconfig.node.json'],
-    tsconfigRootDir: __dirname,
-  },
-}
-```
-
-- Replace `plugin:@typescript-eslint/recommended` to `plugin:@typescript-eslint/recommended-type-checked` or `plugin:@typescript-eslint/strict-type-checked`
-- Optionally add `plugin:@typescript-eslint/stylistic-type-checked`
-- Install [eslint-plugin-react](https://github.com/jsx-eslint/eslint-plugin-react) and add `plugin:react/recommended` & `plugin:react/jsx-runtime` to the `extends` list
+Feel free to keep expanding this document as new features or conventions are added.
