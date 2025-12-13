@@ -1,4 +1,4 @@
-@use './tokens' as tokens;
+@use "./tokens" as tokens;
 
 :root {
   font-family: tokens.$font-stack;
@@ -11,7 +11,7 @@
   @include tokens.theme-vars(tokens.$theme-dark);
 }
 
-[data-theme='light'] {
+[data-theme="light"] {
   @include tokens.theme-vars(tokens.$theme-light);
 }
 
@@ -23,7 +23,8 @@
 
 html,
 body,
-#root {
+#root,
+#modal-root {
   height: 100%;
 }
 
@@ -33,6 +34,11 @@ body {
   background: var(--background-base);
   color: var(--color-text);
   font-family: var(--font-base);
+  overflow: hidden;
+}
+
+body.modal-open {
+  overflow: hidden;
 }
 
 a {

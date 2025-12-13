@@ -7,8 +7,12 @@ import {
   createProject,
   deleteProject,
   listProjects,
+  readSnapshot,
   renameProject,
-  saveChapter
+  reorderProjects,
+  saveChapter,
+  updateProjectDescription,
+  listSnapshots
 } from './services/projectStore'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -39,8 +43,8 @@ const registerIpcHandlers = () => {
     return projects
   })
 
-  ipcMain.handle('projects:create', async (_event, payload: { title: string }) => {
-    const project = await createProject(payload.title)
+  ipcMain.handle('projects:create', async (_event, payload: { title: string; description?: string }) => {
+    const project = await createProject(payload.title, payload.description)
     return project
   })
 
@@ -71,10 +75,35 @@ const registerIpcHandlers = () => {
     return renameProject(payload.projectId, payload.title)
   })
 
+  ipcMain.handle(
+    'projects:updateDescription',
+    async (_event, payload: { projectId: string; description: string }) => {
+      return updateProjectDescription(payload.projectId, payload.description)
+    }
+  )
+
   ipcMain.handle('projects:delete', async (_event, payload: { projectId: string }) => {
     await deleteProject(payload.projectId)
     return true
   })
+
+  ipcMain.handle('projects:reorder', async (_event, payload: { order: string[] }) => {
+    return reorderProjects(payload.order)
+  })
+
+  ipcMain.handle(
+    'snapshots:list',
+    async (_event, payload: { projectId: string; chapterId: string }) => {
+      return listSnapshots(payload.projectId, payload.chapterId)
+    }
+  )
+
+  ipcMain.handle(
+    'snapshots:read',
+    async (_event, payload: { projectId: string; chapterId: string; timestamp: number }) => {
+      return readSnapshot(payload.projectId, payload.chapterId, payload.timestamp)
+    }
+  )
 }
 
 function createWindow() {

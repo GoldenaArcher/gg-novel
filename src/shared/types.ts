@@ -11,7 +11,14 @@ export interface Chapter {
   mood: string
   draft: string
   summary: string
+  updatedAt: number
   autosaveTimestamp?: number
+}
+
+export interface ChapterSnapshot {
+  timestamp: number
+  words: number
+  preview: string
 }
 
 export interface Note {
@@ -29,6 +36,9 @@ export interface ProgressItem {
 export interface Project {
   id: string
   title: string
+  createdAt: number
+  updatedAt: number
+  description?: string
   stats: {
     words: number
     characters: number

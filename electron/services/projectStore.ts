@@ -2,13 +2,14 @@ import { app } from 'electron'
 import crypto from 'node:crypto'
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import type { Chapter, Project } from '../../src/shared/types'
+import type { Chapter, Project, ChapterSnapshot } from '../../src/shared/types'
 
 type ChapterMeta = Omit<Chapter, 'draft' | 'autosaveTimestamp'>
 type ProjectMeta = Omit<Project, 'chapters'> & { chapters: ChapterMeta[] }
 
 const DATA_ROOT = path.join(app.getPath('userData'), 'workspace')
 const PROJECTS_ROOT = path.join(DATA_ROOT, 'projects')
+const ORDER_FILE = path.join(DATA_ROOT, 'projects.json')
 const MAX_SNAPSHOTS = 20
 
 const ensureDir = async (dir: string) => {
@@ -25,6 +26,7 @@ const getSnapshotDir = (projectId: string, chapterId: string) =>
   path.join(getProjectDir(projectId), 'timeline', chapterId)
 const getSnapshotPath = (projectId: string, chapterId: string, timestamp: number) =>
   path.join(getSnapshotDir(projectId, chapterId), `${timestamp}.snapshot`)
+const SNAPSHOT_PREVIEW_LIMIT = 200
 
 const readFileIfExists = async (filePath: string) => {
   try {
@@ -45,7 +47,35 @@ const removeFileIfExists = async (filePath: string) => {
 const loadProjectMeta = async (projectId: string): Promise<ProjectMeta | null> => {
   try {
     const raw = await fs.readFile(getProjectMetaPath(projectId), 'utf-8')
-    return JSON.parse(raw) as ProjectMeta
+    const meta = JSON.parse(raw) as ProjectMeta
+    let dirty = false
+    if (!meta.createdAt) {
+      meta.createdAt = Date.now()
+      dirty = true
+    }
+    if (!meta.updatedAt) {
+      meta.updatedAt = meta.createdAt ?? Date.now()
+      dirty = true
+    }
+    if (typeof meta.description !== 'string') {
+      meta.description = ''
+      dirty = true
+    }
+    if (!Array.isArray(meta.chapters)) {
+      meta.chapters = []
+      dirty = true
+    }
+    const fallbackTime = meta.updatedAt ?? meta.createdAt ?? Date.now()
+    for (const chapter of meta.chapters) {
+      if (!chapter.updatedAt) {
+        chapter.updatedAt = fallbackTime
+        dirty = true
+      }
+    }
+    if (dirty) {
+      await writeProjectMeta(projectId, meta)
+    }
+    return meta
   } catch {
     return null
   }
@@ -54,6 +84,21 @@ const loadProjectMeta = async (projectId: string): Promise<ProjectMeta | null> =
 const writeProjectMeta = async (projectId: string, meta: ProjectMeta) => {
   await ensureDir(getProjectDir(projectId))
   await fs.writeFile(getProjectMetaPath(projectId), JSON.stringify(meta, null, 2), 'utf-8')
+}
+
+const loadProjectOrder = async (): Promise<string[]> => {
+  try {
+    const raw = await fs.readFile(ORDER_FILE, 'utf-8')
+    const parsed = JSON.parse(raw) as { order: string[] }
+    return Array.isArray(parsed.order) ? parsed.order : []
+  } catch {
+    return []
+  }
+}
+
+const saveProjectOrder = async (order: string[]) => {
+  await ensureDir(DATA_ROOT)
+  await fs.writeFile(ORDER_FILE, JSON.stringify({ order }, null, 2), 'utf-8')
 }
 
 const loadChapterWithAutosave = async (projectId: string, chapterMeta: ChapterMeta): Promise<Chapter> => {
@@ -77,7 +122,8 @@ const loadChapterWithAutosave = async (projectId: string, chapterMeta: ChapterMe
   return {
     ...chapterMeta,
     draft,
-    autosaveTimestamp
+    autosaveTimestamp,
+    updatedAt: chapterMeta.updatedAt ?? Math.max(canonicalStat.mtimeMs, autosaveStat.mtimeMs, Date.now())
   }
 }
 
@@ -104,7 +150,7 @@ const recordSnapshot = async (projectId: string, chapterId: string, content: str
 export const listProjects = async (): Promise<Project[]> => {
   await ensureDir(PROJECTS_ROOT)
   const entries = await fs.readdir(PROJECTS_ROOT, { withFileTypes: true })
-  const projects: Project[] = []
+  const projectsMap = new Map<string, Project>()
 
   for (const entry of entries) {
     if (!entry.isDirectory()) continue
@@ -115,13 +161,44 @@ export const listProjects = async (): Promise<Project[]> => {
       const chapter = await loadChapterWithAutosave(entry.name, chapterMeta)
       chapters.push(chapter)
     }
-    projects.push({
+    projectsMap.set(entry.name, {
       ...meta,
       chapters
     })
   }
 
-  return projects
+  const order = await loadProjectOrder()
+  const orderedIds: string[] = []
+  const missing: Project[] = []
+
+  for (const id of order) {
+    if (projectsMap.has(id)) {
+      orderedIds.push(id)
+    }
+  }
+
+  for (const project of projectsMap.values()) {
+    if (!orderedIds.includes(project.id)) {
+      missing.push(project)
+    }
+  }
+
+  missing.sort((a, b) => a.createdAt - b.createdAt)
+  const normalizedOrder = [...orderedIds, ...missing.map((project) => project.id)]
+
+  if (normalizedOrder.length !== order.length || normalizedOrder.some((id, index) => id !== order[index])) {
+    await saveProjectOrder(normalizedOrder)
+  }
+
+  return normalizedOrder.map((id) => projectsMap.get(id)!).filter(Boolean)
+}
+
+const buildSnapshotPreview = (content: string) => {
+  const collapsed = content.replace(/\s+/g, ' ').trim()
+  if (collapsed.length <= SNAPSHOT_PREVIEW_LIMIT) {
+    return collapsed
+  }
+  return `${collapsed.slice(0, SNAPSHOT_PREVIEW_LIMIT)}...`
 }
 
 const readProject = async (projectId: string): Promise<Project | null> => {
@@ -140,7 +217,7 @@ const readProject = async (projectId: string): Promise<Project | null> => {
   }
 }
 
-export const createProject = async (title: string): Promise<Project> => {
+export const createProject = async (title: string, description = ''): Promise<Project> => {
   await ensureDir(PROJECTS_ROOT)
   const id = crypto.randomUUID()
   const projectDir = getProjectDir(id)
@@ -149,9 +226,14 @@ export const createProject = async (title: string): Promise<Project> => {
   await ensureDir(path.join(projectDir, 'autosave'))
   await ensureDir(path.join(projectDir, 'timeline'))
 
+  const now = Date.now()
+
   const initialMeta: ProjectMeta = {
     id,
     title,
+    description,
+    createdAt: now,
+    updatedAt: now,
     stats: {
       words: 0,
       characters: 0
@@ -165,11 +247,18 @@ export const createProject = async (title: string): Promise<Project> => {
   }
 
   await writeProjectMeta(id, initialMeta)
+  const order = await loadProjectOrder()
+  order.push(id)
+  await saveProjectOrder(order)
 
   return {
     ...initialMeta,
     chapters: []
   }
+}
+
+const touchProject = (meta: ProjectMeta) => {
+  meta.updatedAt = Date.now()
 }
 
 export const createChapter = async (projectId: string, title: string): Promise<Project | null> => {
@@ -185,7 +274,8 @@ export const createChapter = async (projectId: string, title: string): Promise<P
     pace: 'balanced',
     mood: '未设定',
     summary: '',
-    draft: ''
+    draft: '',
+    updatedAt: Date.now()
   }
 
   meta.chapters.push({
@@ -195,10 +285,12 @@ export const createChapter = async (projectId: string, title: string): Promise<P
     status: newChapter.status,
     pace: newChapter.pace,
     mood: newChapter.mood,
-    summary: newChapter.summary
+    summary: newChapter.summary,
+    updatedAt: newChapter.updatedAt
   })
 
   updateProjectStats(meta)
+  touchProject(meta)
 
   await writeProjectMeta(projectId, meta)
   await ensureDir(path.join(getProjectDir(projectId), 'chapters'))
@@ -211,6 +303,16 @@ export const createChapter = async (projectId: string, title: string): Promise<P
 export const autosaveChapter = async (projectId: string, chapterId: string, content: string) => {
   await ensureDir(path.join(getProjectDir(projectId), 'autosave'))
   await fs.writeFile(getAutosavePath(projectId, chapterId), content, 'utf-8')
+  const meta = await loadProjectMeta(projectId)
+  if (meta) {
+    const chapterMeta = meta.chapters.find((chapter) => chapter.id === chapterId)
+    if (chapterMeta) {
+      chapterMeta.updatedAt = Date.now()
+      chapterMeta.words = [...content].length
+    }
+    touchProject(meta)
+    await writeProjectMeta(projectId, meta)
+  }
   return { autosaveTimestamp: Date.now() }
 }
 
@@ -222,7 +324,9 @@ export const saveChapter = async (projectId: string, chapterId: string, content:
   if (!chapterMeta) return null
 
   chapterMeta.words = [...content].length
+  chapterMeta.updatedAt = Date.now()
   updateProjectStats(meta)
+  touchProject(meta)
 
   await writeProjectMeta(projectId, meta)
   await ensureDir(path.join(getProjectDir(projectId), 'chapters'))
@@ -234,10 +338,31 @@ export const saveChapter = async (projectId: string, chapterId: string, content:
   return project
 }
 
+export const reorderProjects = async (nextOrder: string[]): Promise<Project[]> => {
+  const existing = await listProjects()
+  const existingIds = existing.map((project) => project.id)
+  const filtered = nextOrder.filter((id) => existingIds.includes(id))
+  const remaining = existingIds.filter((id) => !filtered.includes(id))
+  const finalOrder = [...filtered, ...remaining]
+  await saveProjectOrder(finalOrder)
+  return listProjects()
+}
+
 export const renameProject = async (projectId: string, title: string): Promise<Project | null> => {
   const meta = await loadProjectMeta(projectId)
   if (!meta) return null
   meta.title = title
+  touchProject(meta)
+  await writeProjectMeta(projectId, meta)
+  const project = await readProject(projectId)
+  return project
+}
+
+export const updateProjectDescription = async (projectId: string, description: string): Promise<Project | null> => {
+  const meta = await loadProjectMeta(projectId)
+  if (!meta) return null
+  meta.description = description
+  touchProject(meta)
   await writeProjectMeta(projectId, meta)
   const project = await readProject(projectId)
   return project
@@ -245,4 +370,35 @@ export const renameProject = async (projectId: string, title: string): Promise<P
 
 export const deleteProject = async (projectId: string) => {
   await fs.rm(getProjectDir(projectId), { recursive: true, force: true })
+}
+
+export const listSnapshots = async (projectId: string, chapterId: string): Promise<ChapterSnapshot[]> => {
+  const dir = getSnapshotDir(projectId, chapterId)
+  try {
+    const files = await fs.readdir(dir)
+    const snapshots: ChapterSnapshot[] = []
+    for (const file of files) {
+      if (!file.endsWith('.snapshot')) continue
+      const timestamp = Number(file.replace('.snapshot', ''))
+      if (Number.isNaN(timestamp)) continue
+      const content = await fs.readFile(path.join(dir, file), 'utf-8')
+      snapshots.push({
+        timestamp,
+        words: [...content].length,
+        preview: buildSnapshotPreview(content)
+      })
+    }
+    return snapshots.sort((a, b) => b.timestamp - a.timestamp)
+  } catch {
+    return []
+  }
+}
+
+export const readSnapshot = async (projectId: string, chapterId: string, timestamp: number): Promise<string | null> => {
+  try {
+    const content = await fs.readFile(getSnapshotPath(projectId, chapterId, timestamp), 'utf-8')
+    return content
+  } catch {
+    return null
+  }
 }

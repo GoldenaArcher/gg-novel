@@ -4,7 +4,7 @@ import { EditorPanel } from '../features/editor/components/EditorPanel'
 import { LibrarySidebar } from '../features/library/components/LibrarySidebar'
 import { InsightsPanel } from '../features/notes/components/InsightsPanel'
 import { ProjectManagerDialog } from '../features/library/components/ProjectManagerDialog'
-import { ThemeMode, Project } from '../shared/types'
+import { ThemeMode, Project, ChapterSnapshot } from '../shared/types'
 import { projectBridge } from '../services/ipcClient'
 
 const getInitialTheme = (): ThemeMode => {
@@ -26,18 +26,29 @@ function App() {
   const [theme, setTheme] = useState<ThemeMode>(() => getInitialTheme())
   const [isManagerOpen, setIsManagerOpen] = useState(false)
 
-  const activeProject = useMemo(
+  const activeProjectSource = useMemo(
     () => projects.find((project) => project.id === activeProjectId),
     [projects, activeProjectId]
   )
 
-  const [activeChapterId, setActiveChapterId] = useState(activeProject?.chapters[0]?.id ?? '')
-  const activeChapter = useMemo(
-    () => activeProject?.chapters.find((chapter) => chapter.id === activeChapterId),
-    [activeProject, activeChapterId]
+  const [activeChapterId, setActiveChapterId] = useState(activeProjectSource?.chapters[0]?.id ?? '')
+  const activeChapterSource = useMemo(
+    () => activeProjectSource?.chapters.find((chapter) => chapter.id === activeChapterId),
+    [activeProjectSource, activeChapterId]
   )
 
-  const [draftText, setDraftText] = useState(activeChapter?.draft ?? '')
+  const [draftText, setDraftText] = useState(activeChapterSource?.draft ?? '')
+  const [isAutosaving, setIsAutosaving] = useState(false)
+  const [lastAutosaveAt, setLastAutosaveAt] = useState<number | undefined>(activeChapterSource?.autosaveTimestamp)
+  const [nowTick, setNowTick] = useState(Date.now())
+  const [isTimelineOpen, setIsTimelineOpen] = useState(false)
+  const [timelineEntries, setTimelineEntries] = useState<ChapterSnapshot[]>([])
+  const [timelineLoading, setTimelineLoading] = useState(false)
+  const [selectedSnapshot, setSelectedSnapshot] = useState<number | null>(null)
+  const [snapshotPreview, setSnapshotPreview] = useState<string | null>(null)
+  const [snapshotPreviewLoading, setSnapshotPreviewLoading] = useState(false)
+  const autosaveProjectId = activeProjectSource?.id
+  const autosaveChapterId = activeChapterSource?.id
 
   useEffect(() => {
     projectBridge
@@ -80,12 +91,124 @@ function App() {
   }, [projects, activeProjectId, activeChapterId])
 
   useEffect(() => {
-    setActiveChapterId(activeProject?.chapters[0]?.id ?? '')
-  }, [activeProject?.id])
+    setDraftText(activeChapterSource?.draft ?? '')
+  }, [activeChapterSource?.id, activeChapterSource?.draft])
 
   useEffect(() => {
-    setDraftText(activeChapter?.draft ?? '')
-  }, [activeChapter?.id, activeChapter?.draft])
+    setLastAutosaveAt(activeChapterSource?.autosaveTimestamp)
+    setIsAutosaving(false)
+  }, [activeChapterSource?.id, activeChapterSource?.autosaveTimestamp])
+
+  const projectsView = useMemo(() => {
+    if (!autosaveProjectId || !autosaveChapterId) {
+      return projects
+    }
+    const targetProject = projects.find((project) => project.id === autosaveProjectId)
+    const targetChapter = targetProject?.chapters.find((chapter) => chapter.id === autosaveChapterId)
+    if (!targetProject || !targetChapter) {
+      return projects
+    }
+    const nextWords = [...draftText].length
+    const wordsChanged = targetChapter.words !== nextWords
+    const draftChanged = targetChapter.draft !== draftText
+    if (!wordsChanged && !draftChanged) {
+      return projects
+    }
+    const now = Date.now()
+    return projects.map((project) => {
+      if (project.id !== targetProject.id) return project
+      const updatedChapters = project.chapters.map((chapter) =>
+        chapter.id === autosaveChapterId
+          ? { ...chapter, draft: draftText, words: nextWords, updatedAt: now }
+          : chapter
+      )
+      const updatedStats = wordsChanged
+        ? { ...project.stats, words: project.stats.words - targetChapter.words + nextWords }
+        : project.stats
+      return {
+        ...project,
+        chapters: updatedChapters,
+        stats: updatedStats
+      }
+    })
+  }, [projects, autosaveProjectId, autosaveChapterId, draftText])
+  useEffect(() => {
+    const interval = window.setInterval(() => setNowTick(Date.now()), 30000)
+    return () => window.clearInterval(interval)
+  }, [])
+
+  const closeTimeline = useCallback(() => {
+    setIsTimelineOpen(false)
+    setTimelineEntries([])
+    setSelectedSnapshot(null)
+    setSnapshotPreview(null)
+    setSnapshotPreviewLoading(false)
+  }, [])
+
+  useEffect(() => {
+    closeTimeline()
+  }, [activeChapterSource?.id, closeTimeline])
+
+  useEffect(() => {
+    if (isManagerOpen) {
+      closeTimeline()
+    }
+  }, [isManagerOpen, closeTimeline])
+
+  const handleSelectSnapshot = useCallback(
+    async (timestamp: number) => {
+      if (!autosaveProjectId || !autosaveChapterId) return
+      setSelectedSnapshot(timestamp)
+      setSnapshotPreviewLoading(true)
+      try {
+        const content = await projectBridge.readSnapshot(autosaveProjectId, autosaveChapterId, timestamp)
+        setSnapshotPreview(content ?? null)
+      } catch (error) {
+        console.error('Failed to read snapshot', error)
+        setSnapshotPreview(null)
+      } finally {
+        setSnapshotPreviewLoading(false)
+      }
+    },
+    [autosaveProjectId, autosaveChapterId]
+  )
+
+  const openTimeline = useCallback(async () => {
+    if (!autosaveProjectId || !autosaveChapterId) return
+    setIsTimelineOpen(true)
+    setTimelineLoading(true)
+    try {
+      const entries = await projectBridge.listSnapshots(autosaveProjectId, autosaveChapterId)
+      setTimelineEntries(entries)
+      if (entries.length > 0) {
+        await handleSelectSnapshot(entries[0].timestamp)
+      } else {
+        setSelectedSnapshot(null)
+        setSnapshotPreview(null)
+      }
+    } catch (error) {
+      console.error('Failed to load snapshots', error)
+      setTimelineEntries([])
+    } finally {
+      setTimelineLoading(false)
+    }
+  }, [autosaveProjectId, autosaveChapterId, handleSelectSnapshot])
+
+  const handleRestoreSnapshot = useCallback(() => {
+    if (!snapshotPreview) return
+    setDraftText(snapshotPreview)
+    closeTimeline()
+  }, [snapshotPreview, closeTimeline])
+
+  const activeProjectView = useMemo(
+    () => projectsView.find((project) => project.id === activeProjectId),
+    [projectsView, activeProjectId]
+  )
+
+  const activeChapterView = useMemo(
+    () => activeProjectView?.chapters.find((chapter) => chapter.id === activeChapterId),
+    [activeProjectView, activeChapterId]
+  )
 
   const syncProject = useCallback((nextProject: Project | null) => {
     if (!nextProject) return
@@ -99,23 +222,27 @@ function App() {
   }, [])
 
   const handleCreateProject = useCallback(
-    async (title: string) => {
-      if (!title.trim()) return
-      const project = await projectBridge.createProject(title.trim())
-    syncProject(project)
-    setActiveProjectId(project.id)
-    setActiveChapterId(project.chapters[0]?.id ?? '')
-  },
+    async (title: string, description?: string) => {
+      const trimmedTitle = title.trim()
+      if (!trimmedTitle) return
+      const project = await projectBridge.createProject(trimmedTitle, description?.trim() || undefined)
+      syncProject(project)
+      setActiveProjectId(project.id)
+      setActiveChapterId(project.chapters[0]?.id ?? '')
+    },
     [syncProject]
   )
 
-  const handleCreateChapter = useCallback(async () => {
-    if (!activeProject) return
-    const input = window.prompt('输入新章节标题')
-    if (!input) return
-    const title = input.trim()
-    if (!title) return
-    const updated = await projectBridge.createChapter(activeProject.id, title)
+  const handleCreateChapter = useCallback(async (title?: string) => {
+    if (!activeProjectSource) return
+    let nextTitle = title?.trim()
+    if (!nextTitle) {
+      const input = window.prompt('输入新章节标题')
+      if (!input) return
+      nextTitle = input.trim()
+      if (!nextTitle) return
+    }
+    const updated = await projectBridge.createChapter(activeProjectSource.id, nextTitle)
     if (updated) {
       syncProject(updated)
       const latest = updated.chapters[updated.chapters.length - 1]
@@ -123,15 +250,15 @@ function App() {
         setActiveChapterId(latest.id)
       }
     }
-  }, [activeProject, syncProject])
+  }, [activeProjectSource, syncProject])
 
   const handleChapterSave = useCallback(async () => {
-    if (!activeProject || !activeChapter) return
-    const updated = await projectBridge.saveChapter(activeProject.id, activeChapter.id, draftText)
+    if (!activeProjectSource || !activeChapterSource) return
+    const updated = await projectBridge.saveChapter(activeProjectSource.id, activeChapterSource.id, draftText)
     if (updated) {
       syncProject(updated)
     }
-  }, [activeProject, activeChapter, draftText, syncProject])
+  }, [activeProjectSource, activeChapterSource, draftText, syncProject])
 
   const handleRenameProject = useCallback(
     async (projectId: string, title: string) => {
@@ -143,10 +270,21 @@ function App() {
     [syncProject]
   )
 
+  const handleUpdateDescription = useCallback(
+    async (projectId: string, description: string) => {
+      const updated = await projectBridge.updateProjectDescription(projectId, description)
+      if (updated) {
+        syncProject(updated)
+      }
+    },
+    [syncProject]
+  )
+
   const handleDeleteProject = useCallback(
     async (projectId: string) => {
       await projectBridge.deleteProject(projectId)
-      setProjects((prev) => prev.filter((project) => project.id !== projectId))
+      const refreshed = await projectBridge.listProjects()
+      setProjects(refreshed)
       if (activeProjectId === projectId) {
         setActiveProjectId('')
         setActiveChapterId('')
@@ -155,15 +293,40 @@ function App() {
     [activeProjectId]
   )
 
+  const handleReorderProjects = useCallback(async (order: string[]) => {
+    const updated = await projectBridge.reorderProjects(order)
+    setProjects(updated)
+  }, [])
+
   useEffect(() => {
-    if (!activeProject || !activeChapter) return
+    if (!autosaveProjectId || !autosaveChapterId) {
+      setIsAutosaving(false)
+      return
+    }
+    let cancelled = false
     const handler = setTimeout(() => {
-      projectBridge.autosaveChapter(activeProject.id, activeChapter.id, draftText).catch((error) => {
-        console.error('Autosave failed', error)
-      })
-    }, 2000)
-    return () => clearTimeout(handler)
-  }, [activeProject?.id, activeChapter?.id, draftText])
+      setIsAutosaving(true)
+      projectBridge
+        .autosaveChapter(autosaveProjectId, autosaveChapterId, draftText)
+        .then(({ autosaveTimestamp }) => {
+          if (!cancelled) {
+            setLastAutosaveAt(autosaveTimestamp)
+          }
+        })
+        .catch((error) => {
+          console.error('Autosave failed', error)
+        })
+        .finally(() => {
+          if (!cancelled) {
+            setIsAutosaving(false)
+          }
+        })
+    }, 5000)
+    return () => {
+      cancelled = true
+      clearTimeout(handler)
+    }
+  }, [autosaveProjectId, autosaveChapterId, draftText])
 
   useEffect(() => {
     if (typeof document === 'undefined') {
@@ -185,7 +348,7 @@ function App() {
   return (
     <div className="app-shell">
       <LibrarySidebar
-        projects={projects}
+        projects={projectsView}
         activeProjectId={activeProjectId}
         activeChapterId={activeChapterId}
         onProjectSelect={setActiveProjectId}
@@ -193,19 +356,34 @@ function App() {
         onCreateProject={handleCreateProject}
         onCreateChapter={handleCreateChapter}
         onOpenProjectManager={() => setIsManagerOpen(true)}
+        onReorderProjects={handleReorderProjects}
       />
 
       <EditorPanel
-        projectTitle={activeProject?.title}
-        chapter={activeChapter}
+        projectTitle={activeProjectView?.title}
+        chapter={activeChapterView}
         draftText={draftText}
         onDraftChange={setDraftText}
+        isAutosaving={isAutosaving}
+        autosaveTimestamp={lastAutosaveAt}
+        currentTime={nowTick}
+        isTimelineOpen={isTimelineOpen}
+        timelineEntries={timelineEntries}
+        timelineLoading={timelineLoading}
+        selectedSnapshot={selectedSnapshot ?? undefined}
+        snapshotPreview={snapshotPreview ?? undefined}
+        snapshotPreviewLoading={snapshotPreviewLoading}
+        onOpenTimeline={openTimeline}
+        onCloseTimeline={closeTimeline}
+        onSelectSnapshot={handleSelectSnapshot}
+        onRestoreSnapshot={handleRestoreSnapshot}
+        disableTimeline={isManagerOpen}
         theme={theme}
         onToggleTheme={handleThemeToggle}
         onSaveChapter={handleChapterSave}
       />
 
-      <InsightsPanel notes={activeProject?.notes} progress={activeProject?.progress} />
+      <InsightsPanel notes={activeProjectView?.notes} progress={activeProjectView?.progress} />
 
       <ProjectManagerDialog
         open={isManagerOpen}
@@ -215,6 +393,9 @@ function App() {
         onCreate={handleCreateProject}
         onRename={handleRenameProject}
         onDelete={handleDeleteProject}
+        onReorder={handleReorderProjects}
+        onSelect={setActiveProjectId}
+        onUpdateDescription={handleUpdateDescription}
       />
     </div>
   )
