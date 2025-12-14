@@ -1,11 +1,8 @@
 import { Chapter, ChapterSnapshot, ThemeMode } from '../../../shared/types'
 import { TimelinePanel } from './TimelinePanel'
 import { ModalPortal } from '../../../shared/components/ModalPortal'
-import type { AppLanguage } from '../../../stores/uiStore'
-import { t, formatWordLabel } from '../../../shared/i18n'
-import { t, formatWordLabel } from '../../../shared/i18n'
-import type { AppLanguage } from '../../../stores/uiStore'
-import { t } from '../../../shared/i18n'
+import { useTranslation } from 'react-i18next'
+import { useUiStore } from '../../../stores/uiStore'
 
 interface EditorPanelProps {
   projectTitle?: string
@@ -30,8 +27,6 @@ interface EditorPanelProps {
   disableTimeline?: boolean
   theme: ThemeMode
   onToggleTheme: () => void
-  language: AppLanguage
-  onToggleLanguage: () => void
   onSaveChapter: () => void
 }
 
@@ -58,55 +53,61 @@ export const EditorPanel = ({
   disableTimeline,
   theme,
   onToggleTheme,
-  language,
-  onToggleLanguage,
   onSaveChapter
 }: EditorPanelProps) => {
+  const { t } = useTranslation(['editor', 'common'])
+  // Subscribe separately so unrelated UI store updates do not retrigger renders.
+  const language = useUiStore((state) => state.language)
+  const toggleLanguage = useUiStore((state) => state.toggleLanguage)
+  const wordsLabel = (value: number) => t('editor:words', { count: value })
+
   const formatRelativeTime = (timestamp?: number) => {
-    if (!timestamp) return language === 'zh' ? '尚未保存' : 'Not saved yet'
+    if (!timestamp) return t('editor:time.notSavedYet')
     const diffMs = currentTime - timestamp
     const diffSeconds = Math.floor(diffMs / 1000)
-    if (diffSeconds < 5) return language === 'zh' ? '刚刚' : 'just now'
-    if (diffSeconds < 60) return language === 'zh' ? `${diffSeconds} 秒前` : `${diffSeconds} seconds ago`
+    if (diffSeconds < 5) return t('editor:time.justNow')
+    if (diffSeconds < 60) return t('editor:time.secondsAgo', { count: diffSeconds })
     const diffMinutes = Math.floor(diffSeconds / 60)
-    if (diffMinutes < 60) return language === 'zh' ? `${diffMinutes} 分钟前` : `${diffMinutes} minutes ago`
+    if (diffMinutes < 60) return t('editor:time.minutesAgo', { count: diffMinutes })
     const diffHours = Math.floor(diffMinutes / 60)
-    if (diffHours < 24) return language === 'zh' ? `${diffHours} 小时前` : `${diffHours} hours ago`
+    if (diffHours < 24) return t('editor:time.hoursAgo', { count: diffHours })
     const diffDays = Math.floor(diffHours / 24)
-    return language === 'zh' ? `${diffDays} 天前` : `${diffDays} days ago`
+    return t('editor:time.daysAgo', { count: diffDays })
   }
 
   const autosaveLabel = () => {
-    if (!chapter) return t(language, 'editorAutosaveReady')
-    const wordsLabel = formatWordLabel(language, chapter.words)
-    if (isAutosaving) return `${wordsLabel} · ${t(language, 'editorAutosaveSaving')}`
-    return `${wordsLabel} · ${t(language, 'editorAutosaveActive')} · ${formatRelativeTime(autosaveTimestamp)}`
+    if (!chapter) return t('editor:autosave.ready')
+    const words = wordsLabel(chapter.words)
+    if (isAutosaving) return `${words} · ${t('editor:autosave.saving')}`
+    return `${words} · ${t('editor:autosave.active')} · ${formatRelativeTime(autosaveTimestamp)}`
   }
   const themeToggleLabel =
-    theme === 'dark' ? t(language, 'buttonToggleLight') : t(language, 'buttonToggleDark')
+    theme === 'dark' ? t('common:theme.toggleLight') : t('common:theme.toggleDark')
 
   return (
     <main className="panel editor-panel">
       <header className="editor-header">
         <div>
-          <p className="muted">{projectTitle ?? t(language, 'editorProjectPlaceholder')}</p>
-          <h1>{chapter?.title ?? t(language, 'editorChapterPlaceholder')}</h1>
+          <p className="muted">{projectTitle ?? t('editor:header.projectPlaceholder')}</p>
+          <h1>{chapter?.title ?? t('editor:header.chapterPlaceholder')}</h1>
         </div>
-      <div className="editor-actions">
-        <button className="ghost" onClick={onToggleTheme}>
-          {themeToggleLabel}
-        </button>
-        <button className="ghost" onClick={onToggleLanguage}>
-          {language === 'zh' ? t(language, 'toggleToEnglish') : t(language, 'toggleToChinese')}
-        </button>
-        <button className="ghost" onClick={onSaveChapter} disabled={!chapter}>
-          {t(language, 'buttonSaveChapter')}
-        </button>
-        <button className="ghost" onClick={onOpenTimeline} disabled={!chapter || disableTimeline}>
-          {t(language, 'actionOpenHistory')}
-        </button>
-        <button className="primary">{t(language, 'actionFocusMode')}</button>
-      </div>
+        <div className="editor-actions">
+          <button className="ghost" onClick={onToggleTheme}>
+            {themeToggleLabel}
+          </button>
+          <button className="ghost" onClick={toggleLanguage}>
+            {language === 'zh'
+              ? t('common:language.toggleToEnglish')
+              : t('common:language.toggleToChinese')}
+          </button>
+          <button className="ghost" onClick={onSaveChapter} disabled={!chapter}>
+            {t('editor:action.saveChapter')}
+          </button>
+          <button className="ghost" onClick={onOpenTimeline} disabled={!chapter || disableTimeline}>
+            {t('editor:action.openHistory')}
+          </button>
+          <button className="primary">{t('editor:action.focusMode')}</button>
+        </div>
     </header>
 
     {isTimelineOpen && (
@@ -124,7 +125,6 @@ export const EditorPanel = ({
               onDelete={onDeleteSnapshot}
               deletingTimestamp={deletingSnapshot}
               onClose={onCloseTimeline}
-              language={language}
             />
           </div>
         </div>
@@ -133,16 +133,16 @@ export const EditorPanel = ({
 
     <section className="editor-meta">
       <div>
-        <p className="muted">{t(language, 'labelPace')}</p>
+        <p className="muted">{t('editor:label.pace')}</p>
         <strong>{chapter?.pace ?? '--'}</strong>
       </div>
       <div>
-        <p className="muted">{t(language, 'labelMood')}</p>
+        <p className="muted">{t('editor:label.mood')}</p>
         <strong>{chapter?.mood ?? '--'}</strong>
       </div>
       <div>
-        <p className="muted">{t(language, 'labelSummary')}</p>
-        <p className="summary">{chapter?.summary ?? t(language, 'editorNoSummary')}</p>
+        <p className="muted">{t('editor:label.summary')}</p>
+        <p className="summary">{chapter?.summary ?? t('editor:summary.noSummary')}</p>
       </div>
     </section>
 
@@ -150,7 +150,9 @@ export const EditorPanel = ({
       <textarea
         value={chapter ? draftText : ''}
         onChange={(event) => onDraftChange(event.target.value)}
-        placeholder={chapter ? t(language, 'editorTextareaPlaceholder') : t(language, 'editorChapterPlaceholder')}
+        placeholder={
+          chapter ? t('editor:textarea.placeholder') : t('editor:header.chapterPlaceholder')
+        }
         disabled={!chapter}
       />
     </section>
@@ -158,8 +160,8 @@ export const EditorPanel = ({
     <footer className="editor-footer">
       <p className="muted">{autosaveLabel()}</p>
       <div className="footer-actions">
-        <button className="mini ghost">{t(language, 'actionMarkTodo')}</button>
-        <button className="mini primary">{t(language, 'actionExportSnippet')}</button>
+        <button className="mini ghost">{t('editor:action.markTodo')}</button>
+        <button className="mini primary">{t('editor:action.exportSnippet')}</button>
       </div>
     </footer>
     </main>

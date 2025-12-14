@@ -1,0 +1,44 @@
+{
+  "header": {
+    "projectPlaceholder": "No project selected",
+    "chapterPlaceholder": "Select a chapter to start writing"
+  },
+  "textarea": {
+    "placeholder": "Start writing the next scene..."
+  },
+  "autosave": {
+    "active": "Autosave",
+    "ready": "Autosave · Select a chapter to begin",
+    "saving": "Autosaving..."
+  },
+  "label": {
+    "pace": "Pace",
+    "mood": "Mood",
+    "summary": "Summary"
+  },
+  "summary": {
+    "noSummary": "No summary yet. Add it from the editor panel.",
+    "noProjectDescription": "No description yet. Use Project Manager to add details."
+  },
+  "action": {
+    "openHistory": "History",
+    "focusMode": "Focus mode",
+    "markTodo": "Mark TODO",
+    "exportSnippet": "Export snippet",
+    "saveChapter": "Save chapter"
+  },
+  "time": {
+    "justNow": "just now",
+    "secondsAgo": "{{count}} second ago",
+    "secondsAgo_plural": "{{count}} seconds ago",
+    "minutesAgo": "{{count}} minute ago",
+    "minutesAgo_plural": "{{count}} minutes ago",
+    "hoursAgo": "{{count}} hour ago",
+    "hoursAgo_plural": "{{count}} hours ago",
+    "daysAgo": "{{count}} day ago",
+    "daysAgo_plural": "{{count}} days ago",
+    "notSavedYet": "Not saved yet"
+  },
+  "words": "{{count}} word",
+  "words_plural": "{{count}} words"
+}

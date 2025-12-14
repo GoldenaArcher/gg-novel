@@ -1,0 +1,39 @@
+{
+  "header": {
+    "projectPlaceholder": "未选择项目",
+    "chapterPlaceholder": "选择一个章节开始写作"
+  },
+  "textarea": {
+    "placeholder": "开始写下一个场景..."
+  },
+  "autosave": {
+    "active": "自动保存",
+    "ready": "自动保存 · 选择章节后开始",
+    "saving": "自动保存中..."
+  },
+  "label": {
+    "pace": "节奏",
+    "mood": "氛围",
+    "summary": "摘要"
+  },
+  "summary": {
+    "noSummary": "暂无摘要，选择章节后在编辑区添加。",
+    "noProjectDescription": "暂无简介，使用项目管理为作品添加描述。"
+  },
+  "action": {
+    "openHistory": "历史版本",
+    "focusMode": "专注模式",
+    "markTodo": "标记 TODO",
+    "exportSnippet": "导出片段",
+    "saveChapter": "保存章节"
+  },
+  "time": {
+    "justNow": "刚刚",
+    "secondsAgo": "{{count}} 秒前",
+    "minutesAgo": "{{count}} 分钟前",
+    "hoursAgo": "{{count}} 小时前",
+    "daysAgo": "{{count}} 天前",
+    "notSavedYet": "尚未保存"
+  },
+  "words": "{{count}} 字"
+}

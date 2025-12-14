@@ -1,6 +1,8 @@
+import { useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
+
 import { Note, Project } from '../../../shared/types'
-import { useUiStore } from '../../../stores/uiStore'
-import { t } from '../../../shared/i18n'
+import { resolveLocale } from '../../../shared/i18n/utils'
 
 interface InsightsPanelProps {
   project?: Project
@@ -9,34 +11,39 @@ interface InsightsPanelProps {
 }
 
 export const InsightsPanel = ({ project, notes = [], progress }: InsightsPanelProps) => {
-  const language = useUiStore((state) => state.language)
+  const { t, i18n } = useTranslation('insights')
+  const locale = resolveLocale(i18n.language)
+  const numberFormatter = useMemo(() => new Intl.NumberFormat(locale), [locale])
+
+  const formatNumber = (value: number) => numberFormatter.format(value)
+
   return (
     <section className="panel details-panel">
       {project && (
         <article className="project-card">
           <div>
-            <p className="muted">{t(language, 'insightsCurrentProject')}</p>
+            <p className="muted">{t('currentProject')}</p>
             <h2>{project.title}</h2>
           </div>
           <p className={`project-card__description${project.description ? '' : ' empty'}`}>
-            {project.description?.trim() || t(language, 'insightsNoDescription')}
+            {project.description?.trim() || t('noDescription')}
           </p>
           <div className="project-meta">
             <div>
-              <p className="muted">{t(language, 'insightsTotalWords')}</p>
-              <strong>{project.stats.words.toLocaleString()}</strong>
+              <p className="muted">{t('stats.totalWords')}</p>
+              <strong>{formatNumber(project.stats.words)}</strong>
             </div>
             <div>
-              <p className="muted">{t(language, 'insightsCharacters')}</p>
-              <strong>{project.stats.characters.toLocaleString()}</strong>
+              <p className="muted">{t('stats.characters')}</p>
+              <strong>{formatNumber(project.stats.characters)}</strong>
             </div>
           </div>
         </article>
       )}
 
       <div className="section-header">
-        <p>{t(language, 'insightsIdeasTitle')}</p>
-        <button className="mini ghost">{t(language, 'insightsIdeasAll')}</button>
+        <p>{t('ideas.title')}</p>
+        <button className="mini ghost">{t('ideas.all')}</button>
       </div>
 
       <div className="notes-grid">
@@ -47,15 +54,15 @@ export const InsightsPanel = ({ project, notes = [], progress }: InsightsPanelPr
             <p>{note.content}</p>
           </article>
         ))}
-        {notes.length === 0 && <p className="muted">{t(language, 'insightsIdeasEmpty')}</p>}
+        {notes.length === 0 && <p className="muted">{t('ideas.empty')}</p>}
       </div>
 
       {progress && (
         <div className="outline-card">
           <div className="section-header">
-            <p>{t(language, 'insightsProgressTitle')}</p>
+            <p>{t('progress.title')}</p>
             <span>
-              {t(language, 'insightsProgressOverall')} {progress.overall}%
+              {t('progress.overall')} {progress.overall}%
             </span>
           </div>
           <div className="progress-track">

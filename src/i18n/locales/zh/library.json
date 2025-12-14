@@ -1,0 +1,58 @@
+{
+  "pane": {
+    "explorer": "资源管理器",
+    "outline": "大纲",
+    "timeline": "时间线"
+  },
+  "action": {
+    "manageProjects": "管理作品",
+    "newProject": "新建作品",
+    "newStructure": "新建结构",
+    "newChapter": "新建章节",
+    "deleteProject": "删除当前作品",
+    "timelineButton": "历史版本"
+  },
+  "empty": {
+    "noProjects": "暂无作品，点击\"新建作品\"开始创作。",
+    "outlineEmpty": "暂无可用的大纲内容。",
+    "timelineEmpty": "暂无历史版本，保存章节后将自动生成快照。"
+  },
+  "meta": {
+    "chapters": "{{count}} 章节"
+  },
+  "outline": {
+    "projectLabel": "作品简介",
+    "structureLabel": "结构摘要",
+    "chapterLabel": "章节大纲",
+    "projectPlaceholder": "暂无简介，使用项目管理为作品添加描述。",
+    "structurePlaceholder": "暂无摘要，稍后在编辑区添加。",
+    "chapterPlaceholder": "暂无大纲，点击章节后在编辑区添加摘要。"
+  },
+  "timeline": {
+    "openAll": "打开全部历史版本",
+    "emptyContent": "（空内容）"
+  },
+  "placeholder": {
+    "projectName": "输入作品名称",
+    "structureName": "输入结构名称",
+    "chapterTitle": "输入章节标题"
+  },
+  "confirm": {
+    "deleteProject": "确认删除作品「{{title}}」？该操作不可撤销。",
+    "deleteChapter": "确认删除「{{title}}」及其子节点？该操作不可撤销。"
+  },
+  "prompt": {
+    "structureName": "输入结构名称",
+    "chapterTitle": "输入新章节标题"
+  },
+  "tooltip": {
+    "deleteNode": "删除节点",
+    "deleteNodeLabel": "删除 {{title}}",
+    "manageProjects": "管理作品",
+    "newProject": "新建作品",
+    "newStructure": "新建结构",
+    "newChapter": "新建章节",
+    "deleteCurrentProject": "删除当前作品",
+    "historyVersions": "历史版本"
+  }
+}

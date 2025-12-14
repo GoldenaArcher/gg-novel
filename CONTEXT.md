@@ -2,7 +2,15 @@
 
 This document describes the higher-level goals, responsibilities, and current implementation details for each feature slice in the renderer. It is intended both as onboarding material and as prompt context for AI collaborators.
 
-## Directory Guide
+## Director- **State management**: Zustand-based architecture (All stages complete)
+  - `projectStore`: Project and chapter management
+  - `editorStore`: Draft, autosave, and timeline features
+  - `uiStore`: Theme, language, dialogs, and UI layout state
+  - Custom hooks: Feature-specific business logic
+    - `useTimeline`: Timeline operations
+    - `useProjectOperations`: All CRUD operations
+    - `useSidebarControls`: Sidebar interaction
+  - App.tsx: Layout coordination and hook composition only
 
 - `electron/`: Main-process source. `main.ts` boots the window and loads either the dev server or built renderer; `preload.ts` exposes safe bridges to the renderer.
 - `public/`: Static assets copied as-is into the renderer build (icons, splash graphics, etc.).
@@ -10,15 +18,26 @@ This document describes the higher-level goals, responsibilities, and current im
 - `src/stores/`: Zustand state management stores (introduced in refactoring).
   - `src/stores/projectStore.ts`: Core project and chapter state management with actions and selectors.
   - `src/stores/editorStore.ts`: Editor state management including draft content, autosave status, and timeline features.
+  - `src/stores/uiStore.ts`: UI and layout state management including theme, language, dialogs, and sidebar dimensions.
 - `src/features/`: Feature-specific UI slices.
   - `src/features/editor/`: Editor panel modules (composition, drafting textarea, writing actions, timeline viewer).
+    - `hooks/useTimeline.ts`: Timeline operations hook - handles snapshot loading, selection, restoration, and deletion.
   - `src/features/library/`: Library sidebar modules (project and chapter navigation with hierarchical tree structure, project manager dashboard).
+    - `hooks/useProjectOperations.ts`: Project CRUD operations hook - handles all project and chapter create/delete/move/reorder operations.
+    - `hooks/useSidebarControls.ts`: Sidebar interaction hook - handles sidebar resize, collapse, overlay, and navigation.
   - `src/features/notes/`: Notes & Insights modules (inspiration cards, progress tracking).
 - `src/data/`: Future data adapters (API clients, migrations, import/export helpers). Currently unused because persistence lives in the Electron main process.
 - `src/shared/`: Cross-cutting types and utilities (e.g., `types.ts` for Chapter, Project, ThemeMode, StoryNodeKind definitions) that multiple features consume.
+  - `i18n/utils.ts`: i18n utility functions (locale resolution helpers).
 - `src/shared/components/`: Reusable UI components.
   - `ModalPortal.tsx`: React portal wrapper used by every modal (project manager, timeline, future dialogs). Handles scroll locking by toggling `body.modal-open`.
   - `ErrorBoundary.tsx`: React error boundary for graceful error handling with user-friendly UI and recovery options.
+- `src/i18n/`: Internationalization infrastructure (i18next-based).
+  - `index.ts`: i18next initialization and configuration.
+  - `config.ts`: i18next configuration exports (supported languages, namespaces, defaults).
+  - `locales/en/`: English translation JSON files.
+  - `locales/zh/`: Simplified Chinese translation JSON files.
+  - Organized by namespace for modularity (common UI strings, feature-specific translations).
 - `src/styles/`: Global Sass setup. `_tokens.scss` defines theme variables, `_mixins.scss` contains reusable style patterns, `base.scss` resets the page + theme variables, `app.scss` styles the shell components including CSS custom properties for dynamic sizing, and `error-boundary.scss` styles the error UI.
 - `dist/`, `dist-electron/`, `release/`: Generated output after running `npm run build` (renderer bundle, Electron bundle, and packaged apps). These folders are created during builds and can be cleaned if necessary.
 - `electron/services/`: Main-process utilities. `projectStore.ts` is the filesystem-backed persistence layer (projects, chapters, autosave cache, snapshot timeline, hierarchical structure management).
@@ -106,6 +125,34 @@ This document describes the higher-level goals, responsibilities, and current im
 - **`src/stores/editorStore.ts`**: Zustand store for editor state management:
   - **State**: `draftText`, `isAutosaving`, `lastAutosaveAt`, `nowTick`, `isTimelineOpen`, `timelineEntries`, `timelineLoading`, `selectedSnapshot`, `snapshotPreview`, `snapshotPreviewLoading`, `deletingSnapshot`
   - **Actions**: `setDraftText`, `setAutosaving`, `setLastAutosaveAt`, `setNowTick`, `openTimeline`, `closeTimeline`, `setTimelineEntries`, `setTimelineLoading`, `setSelectedSnapshot`, `setSnapshotPreview`, `setSnapshotPreviewLoading`, `setDeletingSnapshot`
+- **`src/stores/uiStore.ts`**: Zustand store for UI and layout state management:
+  - **State**: `theme`, `language`, `isManagerOpen`, `sidebarWidth`, `sidebarCollapsed`, `resizingSidebar`, `sidebarOverlayOpen`, `paneOpen`
+  - **Actions**: `setTheme`, `toggleTheme`, `setLanguage`, `toggleLanguage`, `setManagerOpen`, `setSidebarWidth`, `setSidebarCollapsed`, `setResizingSidebar`, `setSidebarOverlayOpen`, `setPaneOpen`
+  - **Constants**: `SIDEBAR_MIN_WIDTH` (220px), `SIDEBAR_COLLAPSE_WIDTH` (160px), `SIDEBAR_DEFAULT_WIDTH` (280px), `SIDEBAR_MAX_WIDTH` (420px)
+  - **Theme**: Persisted to localStorage (`gg-theme`), falls back to system preference via `matchMedia`
+  - **Language**: Manages `AppLanguage` ('en' | 'zh'), persisted to localStorage (`gg-language`), auto-detects browser language
+  - **Pane state**: Tracks open/closed state for three sidebar panes (explorer, outline, timeline)
+- **Custom Hooks** (extracted business logic):
+  - **`useTimeline`**: Timeline panel operations for EditorPanel
+    - **Responsibilities**: Load snapshots, handle selection, restore to editor, delete snapshots
+    - **Integration**: Uses `editorStore` with `useShallow` for optimized subscriptions
+    - **Effects**: Auto-load on mount, reset on chapter change, close when manager opens
+    - **Exports**: `openTimeline`, `handleSelectSnapshot`, `handleRestoreSnapshot`, `handleDeleteSnapshot`
+  - **`useProjectOperations`**: All project and chapter CRUD operations
+    - **Responsibilities**: Create/rename/delete projects, create/delete/move/reorder chapters, save chapter content
+    - **Integration**: Uses `projectStore` and IPC bridge (`projectBridge`)
+    - **Handlers**: 10 operations (handleCreateProject, handleCreateChapter, handleDeleteChapter, handleMoveChapter, handleReorderChapters, handleChapterSave, handleRenameProject, handleUpdateDescription, handleDeleteProject, handleReorderProjects)
+    - **Used by**: App.tsx, LibrarySidebar.tsx, ProjectManagerDialog.tsx
+  - **`useSidebarControls`**: Sidebar resize and interaction logic
+    - **Responsibilities**: Sidebar width resize with drag, collapse/expand, overlay (mobile), project/chapter selection
+    - **Integration**: Uses `uiStore` for layout state, `projectStore` for active selection
+    - **Effects**: Responsive layout handling (auto-close overlay on desktop), mouse event cleanup
+    - **Exports**: Width state, resize handlers, overlay controls, selection handlers
+    - **Used by**: App.tsx for main sidebar interaction
+- **`src/stores/uiStore.ts`**: Zustand store for UI state management:
+  - **State**: `theme`, `language`, `isManagerOpen`, `sidebarWidth`, `sidebarCollapsed`, `resizingSidebar`, `sidebarOverlayOpen`, `paneOpen`
+  - **Actions**: `setTheme`, `toggleTheme`, `setLanguage`, `toggleLanguage`, `setManagerOpen`, `setSidebarWidth`, `setSidebarCollapsed`, `setResizingSidebar`, `setSidebarOverlayOpen`, `setPaneOpen`
+  - **Language support**: Manages `AppLanguage` ('en' | 'zh') with localStorage persistence and browser preference detection
 - **`src/shared/components/ErrorBoundary.tsx`**: React error boundary component that catches component errors and displays user-friendly error UI with recovery options ("Try Again" and "Reload Page"). Integrated at app root level.
 - **`src/data/`**: Reserved for data migrations/importers if we need to move beyond the built-in filesystem store.
 - **`src/styles/`**: Token-driven styling system; components are expected to lean on the CSS variables to stay in sync across themes. Global base styles also manage modal scroll locking so the root layout stays fixed while dialogs scroll internally.
@@ -160,27 +207,27 @@ This document describes the higher-level goals, responsibilities, and current im
 ## App Shell & Layout
 
 - **`src/app/App.tsx`**: Central state management and layout orchestration
-  - **State management architecture** (Refactoring complete: Stage 1 & 2):
-    - **Zustand stores** (migrated):
-      - Project state: Managed by `projectStore` (projects list, active project/chapter IDs, allowChapterless flag)
-      - Editor state: Managed by `editorStore` (draft text, autosave status, timeline state)
-    - **Local state** (remaining in App.tsx):
-      - Theme state (1 useState) - Simple UI toggle
-      - Manager state (1 useState) - Dialog open/close
-      - Sidebar state (4 useState + 1 ref) - Complex DOM interactions: width, collapsed, resizing, overlay
+  - **State management architecture** (Refactoring complete: Stages 1-4):
+    - **Zustand stores**:
+      - `projectStore`: Projects list, active project/chapter IDs, allowChapterless flag
+      - `editorStore`: Draft text, autosave status, timeline state
+      - `uiStore`: Theme, language, dialogs, sidebar dimensions, pane visibility
+    - **Custom hooks**:
+      - `useTimeline`: Timeline operations
+      - `useProjectOperations`: All CRUD operations
+      - `useSidebarControls`: Sidebar interaction logic
+    - **Local state** (minimal, remaining in App.tsx):
       - Responsive layout (1 custom hook with internal useState) - Media query listener
   - **Live draft computation**: Uses `useMemo` with `getProjectsWithLiveDraft` to compute projects with real-time draft updates without causing infinite re-renders
   - **Editor state integration**: Uses `useEditorStore` with `useShallow` for optimized subscriptions to editor state (draft, autosave, timeline)
-  - **Sidebar resizing logic**: 
-    - Mouse down on resizer starts resize mode
-    - Mouse move updates width with min/max constraints
-    - Mouse up ends resize
-    - Auto-collapse when width drops below SIDEBAR_COLLAPSE_WIDTH
-    - CSS custom property `--sidebar-width` controls actual width
+  - **Sidebar logic**: Delegated to `useSidebarControls` hook (resize, collapse, overlay handling)
+  - **CRUD operations**: Delegated to `useProjectOperations` hook (all project/chapter operations)
+  - **Timeline operations**: Delegated to `useTimeline` hook (snapshot management)
   - **Chapter selection flow**: Validates active IDs against loaded projects, handles fallbacks when chapters/projects are deleted
   - **Autosave debouncing**: Uses ref-based timeout to debounce IPC calls
   - **State synchronization**: After save/autosave, patches local project state with returned data from backend to keep UI in sync
-- **Theme persistence**: Theme preference stored in `localStorage` as `gg-theme`, falls back to system preference via `matchMedia`
+- **Theme persistence**: Theme preference stored in `localStorage` as `gg-theme`, managed by `uiStore`, falls back to system preference via `matchMedia`
+- **Language persistence**: Language preference stored in `localStorage` as `gg-language`, managed by `uiStore`, auto-detects browser language (Chinese for `zh-*` locales)
 - **Error handling**: Entire app wrapped in ErrorBoundary component for graceful error recovery
 
 ## Known Issues & Future Enhancements
@@ -200,10 +247,17 @@ This document describes the higher-level goals, responsibilities, and current im
 - **Styling approach**: SCSS with token-based design system, component-specific styles co-located
 - **Build tooling**: Vite for renderer, electron-builder for packaging
 - **Testing**: No test framework configured yet
+- **Internationalization**: 
+  - **System**: i18next + react-i18next with `useTranslation()` hook
+  - **Languages**: Simplified Chinese (zh-CN, default) and English (en-US)
+  - **Dependencies**: `i18next`, `react-i18next`
+  - **Architecture**: Namespace-based JSON files in `src/i18n/locales/`
+  - **Language state**: Managed by `uiStore` with localStorage persistence (`gg-language` key) and browser language detection
+  - **Utilities**: Locale resolution helpers in `src/shared/i18n/utils.ts`
 - **State management**: Zustand-based architecture (All stages complete)
   - `projectStore`: Project and chapter management
   - `editorStore`: Draft, autosave, and timeline features
-  - `uiStore`: Theme and UI layout state
+  - `uiStore`: Theme, language, and UI layout state
   - Custom hooks: Feature-specific business logic
   - App.tsx: Layout coordination only
 - **Performance patterns**: 
@@ -216,8 +270,8 @@ This document describes the higher-level goals, responsibilities, and current im
   - State management → Zustand stores (`src/stores/`)
   - Business logic → Custom hooks (`src/features/*/hooks/`)
   - UI components → Feature components (`src/features/*/components/`)
-  - Layout coordination → App.tsx
-  - UI/Layout logic → Components
-  - Shared utilities → Exported pure functions
+  - Layout coordination → App.tsx (uses stores and hooks via composition)
+  - UI/Layout logic → Extracted to custom hooks (e.g., `useSidebarControls`)
+  - Shared utilities → Exported pure functions from stores
 
 Keep this document updated as new feature slices are added or responsibilities shift. It pairs with the root `README.md` for a complete view of the project.

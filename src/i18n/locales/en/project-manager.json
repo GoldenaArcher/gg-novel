@@ -1,0 +1,61 @@
+{
+  "title": "Project Manager",
+  "close": "Close",
+  "search": {
+    "placeholder": "Search by title or description"
+  },
+  "sort": {
+    "label": "Sort",
+    "manual": "Manual order",
+    "updated": "Recently updated",
+    "created": "Creation time",
+    "title": "Title (A-Z)"
+  },
+  "create": {
+    "titlePlaceholder": "New project title",
+    "descriptionPlaceholder": "Optional: add a description",
+    "submit": "Create",
+    "hint": "Default order follows creation time. Dragging works only in manual mode without filters."
+  },
+  "empty": {
+    "noProjects": "No projects yet. Use the form above to start a new story.",
+    "noMatches": "No projects match your search."
+  },
+  "label": {
+    "created": "Created",
+    "updated": "Last updated",
+    "noChapters": "No chapters yet",
+    "noUpdates": "--"
+  },
+  "badge": {
+    "active": "Active"
+  },
+  "action": {
+    "setActive": "Set active",
+    "editDescription": "Edit description",
+    "rename": "Rename",
+    "delete": "Delete"
+  },
+  "description": {
+    "empty": "No description yet. Start typing to add one.",
+    "placeholder": "Add a description",
+    "autoSaveHint": "Saved automatically."
+  },
+  "stats": {
+    "words": "Words",
+    "characters": "Characters",
+    "chapters": "Chapters",
+    "progress": "Progress"
+  },
+  "delete": {
+    "title": "Confirm delete",
+    "activeWarning": "This is the active project. Deleting it will switch to another project. This cannot be undone.",
+    "warning": "This action cannot be undone. Make sure you have backups.",
+    "inProgress": "Deleting…"
+  },
+  "save": {
+    "title": "Save",
+    "description": "Save description",
+    "cancel": "Cancel"
+  }
+}

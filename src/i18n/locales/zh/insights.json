@@ -1,0 +1,17 @@
+{
+  "currentProject": "当前项目",
+  "noDescription": "暂无简介，使用项目管理为作品添加描述。",
+  "stats": {
+    "totalWords": "总字数",
+    "characters": "角色卡"
+  },
+  "ideas": {
+    "title": "灵感与任务",
+    "all": "全部",
+    "empty": "暂时没有灵感记录，开始添加一条备忘吧。"
+  },
+  "progress": {
+    "title": "进度",
+    "overall": "总体"
+  }
+}
