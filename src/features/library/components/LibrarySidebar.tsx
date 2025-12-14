@@ -658,7 +658,7 @@ export const LibrarySidebar = ({
 
   const renderNode = (projectId: string, node: Chapter, parentId: string | null, siblings: Chapter[], depth: number) => {
     const isExpanded = expandedNodes[node.id] ?? true
-    const isActive = node.kind === 'chapter' && node.id === activeChapterId && projectId === activeProjectId
+    const isActive = node.id === activeChapterId && projectId === activeProjectId
     const wordsLabel =
       node.kind === 'chapter'
         ? `${node.words.toLocaleString()} 字`
@@ -696,7 +696,12 @@ export const LibrarySidebar = ({
           <button
             type="button"
             className="tree-node__label"
-            onClick={() => (node.kind === 'chapter' ? selectChapter(projectId, node.id) : toggleNode(node.id))}
+            onClick={() => {
+              selectChapter(projectId, node.id)
+              if (node.kind === 'group') {
+                toggleNode(node.id)
+              }
+            }}
           >
             <span>{node.title}</span>
             <span className="tree-node__meta">{wordsLabel}</span>

@@ -4,62 +4,31 @@ import { EditorPanel } from '../features/editor/components/EditorPanel'
 import { LibrarySidebar } from '../features/library/components/LibrarySidebar'
 import { InsightsPanel } from '../features/notes/components/InsightsPanel'
 import { ProjectManagerDialog } from '../features/library/components/ProjectManagerDialog'
-import { ThemeMode, Project, ChapterSnapshot, Chapter, StoryNodeKind } from '../shared/types'
+import { Project, StoryNodeKind, Chapter } from '../shared/types'
 import { projectBridge } from '../services/ipcClient'
 import { MdClose, MdSettings } from 'react-icons/md'
+import { 
+  useProjectStore, 
+  selectActiveProject, 
+  selectActiveChapter,
+  getProjectsWithLiveDraft
+} from '../stores/projectStore'
+import { useEditorStore } from '../stores/editorStore'
+import { useUiStore, SIDEBAR_DEFAULT_WIDTH, SIDEBAR_MIN_WIDTH, SIDEBAR_COLLAPSE_WIDTH, SIDEBAR_MAX_WIDTH } from '../stores/uiStore'
+import { useShallow } from 'zustand/shallow'
 
-const patchStructureNode = (
-  node: Chapter,
-  chapterId: string,
-  updater: (node: Chapter) => Chapter
-): { node: Chapter; changed: boolean } => {
-  if (node.id === chapterId) {
-    return { node: updater(node), changed: true }
-  }
-  if (!node.children?.length) {
-    return { node, changed: false }
-  }
-  let childChanged = false
-  const updatedChildren = node.children.map((child) => {
-    const result = patchStructureNode(child, chapterId, updater)
-    if (result.changed) childChanged = true
-    return result.node
-  })
-  if (childChanged) {
-    const updatedNode: Chapter = {
-      ...node,
-      children: updatedChildren,
-      words: node.kind === 'group' ? updatedChildren.reduce((sum, child) => sum + child.words, 0) : node.words
+const structureContainsNode = (nodes: Chapter[] | undefined, targetId: string): boolean => {
+  if (!nodes) return false
+  for (const node of nodes) {
+    if (node.id === targetId) {
+      return true
     }
-    return { node: updatedNode, changed: true }
+    if (structureContainsNode(node.children, targetId)) {
+      return true
+    }
   }
-  return { node, changed: false }
+  return false
 }
-
-const patchStructureById = (structure: Chapter[], chapterId: string, updater: (node: Chapter) => Chapter) => {
-  let changed = false
-  const nodes = structure.map((node) => {
-    const result = patchStructureNode(node, chapterId, updater)
-    if (result.changed) changed = true
-    return result.node
-  })
-  return changed ? nodes : structure
-}
-
-const getInitialTheme = (): ThemeMode => {
-  if (typeof window === 'undefined') {
-    return 'dark'
-  }
-
-  const stored = window.localStorage.getItem('gg-theme')
-  if (stored === 'light' || stored === 'dark') {
-    return stored
-  }
-
-  return window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
-}
-
-const SIDEBAR_DEFAULT_WIDTH = 280
 
 const useMediaQuery = (query: string) => {
   const [matches, setMatches] = useState(() => {
@@ -84,59 +53,132 @@ const useMediaQuery = (query: string) => {
 }
 
 function App() {
-  const [projects, setProjects] = useState<Project[]>([])
-  const [activeProjectId, setActiveProjectId] = useState(projects[0]?.id ?? '')
-  const [theme, setTheme] = useState<ThemeMode>(() => getInitialTheme())
-  const [isManagerOpen, setIsManagerOpen] = useState(false)
+  // ===== Zustand Store - Project State =====
+  const projects = useProjectStore((state) => state.projects)
+  const activeProjectId = useProjectStore((state) => state.activeProjectId)
+  const activeChapterId = useProjectStore((state) => state.activeChapterId)
+  const allowChapterless = useProjectStore((state) => state.allowChapterless)
+  const setActiveProjectId = useProjectStore((state) => state.setActiveProject)
+  const setActiveChapterId = useProjectStore((state) => state.setActiveChapter)
+  const setAllowChapterless = useProjectStore((state) => state.setAllowChapterless)
+  const syncProjectToStore = useProjectStore((state) => state.syncProject)
+  const loadProjects = useProjectStore((state) => state.loadProjects)
+  
+  // Use selectors to get current project and chapter
+  const activeProjectSource = useProjectStore(selectActiveProject)
+  const activeChapterSource = useProjectStore(selectActiveChapter)
 
-  const activeProjectSource = useMemo(
-    () => projects.find((project) => project.id === activeProjectId),
-    [projects, activeProjectId]
+  // ===== UI Store State =====
+  const {
+    theme,
+    isManagerOpen,
+    sidebarWidth,
+    sidebarCollapsed,
+    resizingSidebar,
+    sidebarOverlayOpen
+  } = useUiStore(
+    useShallow((state) => ({
+      theme: state.theme,
+      isManagerOpen: state.isManagerOpen,
+      sidebarWidth: state.sidebarWidth,
+      sidebarCollapsed: state.sidebarCollapsed,
+      resizingSidebar: state.resizingSidebar,
+      sidebarOverlayOpen: state.sidebarOverlayOpen
+    }))
+  )
+  const {
+    toggleTheme,
+    setManagerOpen,
+    setSidebarWidth,
+    setSidebarCollapsed,
+    setResizingSidebar,
+    setSidebarOverlayOpen
+  } = useUiStore(
+    useShallow((state) => ({
+      toggleTheme: state.toggleTheme,
+      setManagerOpen: state.setManagerOpen,
+      setSidebarWidth: state.setSidebarWidth,
+      setSidebarCollapsed: state.setSidebarCollapsed,
+      setResizingSidebar: state.setResizingSidebar,
+      setSidebarOverlayOpen: state.setSidebarOverlayOpen
+    }))
   )
 
-  const [activeChapterId, setActiveChapterId] = useState(activeProjectSource?.chapters[0]?.id ?? '')
-  const [allowChapterless, setAllowChapterless] = useState(false)
-  const activeChapterSource = useMemo(
-    () => activeProjectSource?.chapters.find((chapter) => chapter.id === activeChapterId),
-    [activeProjectSource, activeChapterId]
+  // ===== Editor Store State =====
+  const {
+    draftText,
+    isAutosaving,
+    lastAutosaveAt,
+    nowTick,
+    isTimelineOpen,
+    timelineEntries,
+    timelineLoading,
+    selectedSnapshot,
+    snapshotPreview,
+    snapshotPreviewLoading,
+    deletingSnapshot
+  } = useEditorStore(
+    useShallow((state) => ({
+      draftText: state.draftText,
+      isAutosaving: state.isAutosaving,
+      lastAutosaveAt: state.lastAutosaveAt,
+      nowTick: state.nowTick,
+      isTimelineOpen: state.isTimelineOpen,
+      timelineEntries: state.timelineEntries,
+      timelineLoading: state.timelineLoading,
+      selectedSnapshot: state.selectedSnapshot,
+      snapshotPreview: state.snapshotPreview,
+      snapshotPreviewLoading: state.snapshotPreviewLoading,
+      deletingSnapshot: state.deletingSnapshot
+    }))
   )
-
-  const [draftText, setDraftText] = useState(activeChapterSource?.draft ?? '')
-  const [isAutosaving, setIsAutosaving] = useState(false)
-  const [lastAutosaveAt, setLastAutosaveAt] = useState<number | undefined>(activeChapterSource?.autosaveTimestamp)
-  const [nowTick, setNowTick] = useState(Date.now())
-  const [isTimelineOpen, setIsTimelineOpen] = useState(false)
-  const [timelineEntries, setTimelineEntries] = useState<ChapterSnapshot[]>([])
-  const [timelineLoading, setTimelineLoading] = useState(false)
-  const [selectedSnapshot, setSelectedSnapshot] = useState<number | null>(null)
-  const [snapshotPreview, setSnapshotPreview] = useState<string | null>(null)
-  const [snapshotPreviewLoading, setSnapshotPreviewLoading] = useState(false)
-  const [deletingSnapshot, setDeletingSnapshot] = useState<number | null>(null)
+  const {
+    setDraftText,
+    setAutosaving: setIsAutosaving,
+    setLastAutosaveAt,
+    setNowTick,
+    openTimeline: openTimelinePanel,
+    closeTimeline: closeTimelinePanel,
+    setTimelineEntries,
+    setTimelineLoading,
+    setSelectedSnapshot,
+    setSnapshotPreview,
+    setSnapshotPreviewLoading,
+    setDeletingSnapshot,
+    resetTimelineData
+  } = useEditorStore(
+    useShallow((state) => ({
+      setDraftText: state.setDraftText,
+      setAutosaving: state.setAutosaving,
+      setLastAutosaveAt: state.setLastAutosaveAt,
+      setNowTick: state.setNowTick,
+      openTimeline: state.openTimeline,
+      closeTimeline: state.closeTimeline,
+      setTimelineEntries: state.setTimelineEntries,
+      setTimelineLoading: state.setTimelineLoading,
+      setSelectedSnapshot: state.setSelectedSnapshot,
+      setSnapshotPreview: state.setSnapshotPreview,
+      setSnapshotPreviewLoading: state.setSnapshotPreviewLoading,
+      setDeletingSnapshot: state.setDeletingSnapshot,
+      resetTimelineData: state.resetTimelineData
+    }))
+  )
   const autosaveProjectId = activeProjectSource?.id
   const autosaveChapterId = activeChapterSource?.id
-  const SIDEBAR_MIN_WIDTH = 220
-  const SIDEBAR_COLLAPSE_WIDTH = 160
-  const SIDEBAR_MAX_WIDTH = 420
-  const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT_WIDTH)
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
-  const [resizingSidebar, setResizingSidebar] = useState(false)
-  const [sidebarOverlayOpen, setSidebarOverlayOpen] = useState(false)
   const sidebarDragRef = useRef<{ startX: number; width: number } | null>(null)
   const isCompactLayout = useMediaQuery('(max-width: 1200px)')
   const isSidebarCollapsed = isCompactLayout ? true : sidebarCollapsed
 
+  // ===== Initialize and load projects =====
   useEffect(() => {
-    projectBridge
-      .listProjects()
-      .then(setProjects)
-      .catch((error) => console.error('Failed to load projects', error))
-  }, [])
+    loadProjects().catch((error) => console.error('Failed to load projects', error))
+  }, [loadProjects])
 
   useEffect(() => {
     if (!isCompactLayout) {
       setSidebarOverlayOpen(false)
     }
-  }, [isCompactLayout])
+  }, [isCompactLayout, setSidebarOverlayOpen])
 
   useEffect(() => {
     if (projects.length === 0) {
@@ -165,8 +207,8 @@ function App() {
 
     const project = projects.find((p) => p.id === activeProjectId)
     if (project && activeChapterId) {
-      const chapterExists = project.chapters.some((chapter) => chapter.id === activeChapterId)
-      if (!chapterExists) {
+      const nodeExists = structureContainsNode(project.structure, activeChapterId)
+      if (!nodeExists) {
         setActiveChapterId(project.chapters[0]?.id ?? '')
         setAllowChapterless(false)
       }
@@ -185,75 +227,34 @@ function App() {
 
   useEffect(() => {
     setDraftText(activeChapterSource?.draft ?? '')
-  }, [activeChapterSource?.id, activeChapterSource?.draft])
+  }, [activeChapterSource?.id, activeChapterSource?.draft, setDraftText])
 
   useEffect(() => {
     setLastAutosaveAt(activeChapterSource?.autosaveTimestamp)
     setIsAutosaving(false)
-  }, [activeChapterSource?.id, activeChapterSource?.autosaveTimestamp])
+  }, [activeChapterSource?.id, activeChapterSource?.autosaveTimestamp, setLastAutosaveAt, setIsAutosaving])
 
-  const projectsView = useMemo(() => {
-    if (!autosaveProjectId || !autosaveChapterId) {
-      return projects
-    }
-    const targetProject = projects.find((project) => project.id === autosaveProjectId)
-    const targetChapter = targetProject?.chapters.find((chapter) => chapter.id === autosaveChapterId)
-    if (!targetProject || !targetChapter) {
-      return projects
-    }
-    const nextWords = [...draftText].length
-    const wordsChanged = targetChapter.words !== nextWords
-    const draftChanged = targetChapter.draft !== draftText
-    if (!wordsChanged && !draftChanged) {
-      return projects
-    }
-    const now = Date.now()
-    return projects.map((project) => {
-      if (project.id !== targetProject.id) return project
-      const updatedChapters = project.chapters.map((chapter) =>
-        chapter.id === autosaveChapterId
-          ? { ...chapter, draft: draftText, words: nextWords, updatedAt: now }
-          : chapter
-      )
-      const updatedStructure = patchStructureById(
-        project.structure ?? [],
-        autosaveChapterId,
-        (node) => ({ ...node, draft: draftText, words: nextWords, updatedAt: now })
-      )
-      const updatedStats = wordsChanged
-        ? { ...project.stats, words: project.stats.words - targetChapter.words + nextWords }
-        : project.stats
-      return {
-        ...project,
-        structure: updatedStructure,
-        chapters: updatedChapters,
-        stats: updatedStats
-      }
-    })
-  }, [projects, autosaveProjectId, autosaveChapterId, draftText])
+  // Use useMemo to calculate projects with live draft data (prevents infinite loops)
+  const projectsView = useMemo(
+    () => getProjectsWithLiveDraft(projects, draftText, autosaveProjectId ?? '', autosaveChapterId ?? ''),
+    [projects, draftText, autosaveProjectId, autosaveChapterId]
+  )
+  
   useEffect(() => {
     const interval = window.setInterval(() => setNowTick(Date.now()), 30000)
     return () => window.clearInterval(interval)
-  }, [])
-
-  const closeTimeline = useCallback(() => {
-    setIsTimelineOpen(false)
-    setTimelineEntries([])
-    setSelectedSnapshot(null)
-    setSnapshotPreview(null)
-    setSnapshotPreviewLoading(false)
-    setDeletingSnapshot(null)
-  }, [])
+  }, [setNowTick])
 
   useEffect(() => {
-    closeTimeline()
-  }, [activeChapterSource?.id, closeTimeline])
+    closeTimelinePanel()
+    resetTimelineData()
+  }, [activeChapterSource?.id, closeTimelinePanel, resetTimelineData])
 
   useEffect(() => {
     if (isManagerOpen) {
-      closeTimeline()
+      closeTimelinePanel()
     }
-  }, [isManagerOpen, closeTimeline])
+  }, [isManagerOpen, closeTimelinePanel])
 
   const handleSelectSnapshot = useCallback(
     async (timestamp: number) => {
@@ -270,7 +271,13 @@ function App() {
         setSnapshotPreviewLoading(false)
       }
     },
-    [autosaveProjectId, autosaveChapterId]
+    [
+      autosaveProjectId,
+      autosaveChapterId,
+      setSelectedSnapshot,
+      setSnapshotPreviewLoading,
+      setSnapshotPreview
+    ]
   )
 
   const loadSnapshots = useCallback(
@@ -302,7 +309,15 @@ function App() {
         setTimelineLoading(false)
       }
     },
-    [autosaveProjectId, autosaveChapterId, handleSelectSnapshot]
+    [
+      autosaveProjectId,
+      autosaveChapterId,
+      handleSelectSnapshot,
+      setTimelineEntries,
+      setSelectedSnapshot,
+      setSnapshotPreview,
+      setTimelineLoading
+    ]
   )
 
   useEffect(() => {
@@ -311,19 +326,27 @@ function App() {
 
   const openTimeline = useCallback(async () => {
     if (!autosaveProjectId || !autosaveChapterId) return
-    setIsTimelineOpen(true)
+    openTimelinePanel()
     if (timelineEntries.length === 0) {
       await loadSnapshots({ selectFirst: true })
     } else if (!selectedSnapshot && timelineEntries.length > 0) {
       await handleSelectSnapshot(timelineEntries[0].timestamp)
     }
-  }, [autosaveProjectId, autosaveChapterId, timelineEntries, loadSnapshots, selectedSnapshot, handleSelectSnapshot])
+  }, [
+    autosaveProjectId,
+    autosaveChapterId,
+    timelineEntries,
+    loadSnapshots,
+    selectedSnapshot,
+    handleSelectSnapshot,
+    openTimelinePanel
+  ])
 
   const handleRestoreSnapshot = useCallback(() => {
     if (!snapshotPreview) return
     setDraftText(snapshotPreview)
-    closeTimeline()
-  }, [snapshotPreview, closeTimeline])
+    closeTimelinePanel()
+  }, [snapshotPreview, closeTimelinePanel, setDraftText])
 
   const handleDeleteSnapshot = useCallback(
     async (timestamp: number) => {
@@ -338,7 +361,7 @@ function App() {
         setDeletingSnapshot(null)
       }
     },
-    [autosaveProjectId, autosaveChapterId, handleSelectSnapshot, loadSnapshots]
+    [autosaveProjectId, autosaveChapterId, handleSelectSnapshot, loadSnapshots, setDeletingSnapshot]
   )
 
   const activeProjectView = useMemo(
@@ -351,16 +374,11 @@ function App() {
     [activeProjectView, activeChapterId]
   )
 
+  // Wrapper for syncProject to maintain compatibility with existing code
   const syncProject = useCallback((nextProject: Project | null) => {
     if (!nextProject) return
-    setProjects((prev) => {
-      const exists = prev.some((project) => project.id === nextProject.id)
-      if (!exists) {
-        return [...prev, nextProject]
-      }
-      return prev.map((project) => (project.id === nextProject.id ? nextProject : project))
-    })
-  }, [])
+    syncProjectToStore(nextProject)
+  }, [syncProjectToStore])
 
   const handleSidebarProjectSelect = useCallback(
     (projectId: string) => {
@@ -369,7 +387,7 @@ function App() {
         setSidebarOverlayOpen(false)
       }
     },
-    [isCompactLayout]
+    [isCompactLayout, setSidebarOverlayOpen]
   )
 
   const handleSidebarChapterSelect = useCallback(
@@ -380,7 +398,7 @@ function App() {
         setSidebarOverlayOpen(false)
       }
     },
-    [isCompactLayout]
+    [isCompactLayout, setSidebarOverlayOpen]
   )
 
   const handleCreateProject = useCallback(
@@ -482,28 +500,29 @@ function App() {
   const handleDeleteProject = useCallback(
     async (projectId: string) => {
       await projectBridge.deleteProject(projectId)
-      const refreshed = await projectBridge.listProjects()
-      setProjects(refreshed)
+      // Reload projects list
+      await loadProjects()
       if (activeProjectId === projectId) {
         setActiveProjectId('')
-      setActiveChapterId('')
-      setAllowChapterless(false)
+        setActiveChapterId('')
+        setAllowChapterless(false)
       }
     },
-    [activeProjectId]
+    [activeProjectId, loadProjects, setActiveProjectId, setActiveChapterId, setAllowChapterless]
   )
 
   const handleReorderProjects = useCallback(async (order: string[]) => {
     const updated = await projectBridge.reorderProjects(order)
-    setProjects(updated)
+    // Directly use store's setProjects
+    useProjectStore.getState().setProjects(updated)
   }, [])
 
   const handleOpenProjectManager = useCallback(() => {
-    setIsManagerOpen(true)
+    setManagerOpen(true)
     if (isCompactLayout) {
       setSidebarOverlayOpen(false)
     }
-  }, [isCompactLayout])
+  }, [isCompactLayout, setManagerOpen, setSidebarOverlayOpen])
 
   useEffect(() => {
     if (!autosaveProjectId || !autosaveChapterId) {
@@ -533,7 +552,7 @@ function App() {
       cancelled = true
       clearTimeout(handler)
     }
-  }, [autosaveProjectId, autosaveChapterId, draftText])
+  }, [autosaveProjectId, autosaveChapterId, draftText, setIsAutosaving, setLastAutosaveAt])
 
   useEffect(() => {
     if (typeof document === 'undefined') {
@@ -549,7 +568,7 @@ function App() {
   }, [theme])
 
   const handleThemeToggle = () => {
-    setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))
+    toggleTheme()
   }
 
   const startSidebarResize = (event: React.MouseEvent<HTMLDivElement>) => {
@@ -588,7 +607,15 @@ function App() {
       window.removeEventListener('mousemove', handleMove)
       window.removeEventListener('mouseup', handleUp)
     }
-  }, [resizingSidebar, SIDEBAR_COLLAPSE_WIDTH, SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH, sidebarCollapsed, sidebarWidth])
+  }, [
+    resizingSidebar,
+    SIDEBAR_COLLAPSE_WIDTH,
+    SIDEBAR_MAX_WIDTH,
+    SIDEBAR_MIN_WIDTH,
+    setSidebarCollapsed,
+    setResizingSidebar,
+    setSidebarWidth
+  ])
 
   const reopenSidebar = () => {
     setSidebarCollapsed(false)
@@ -667,7 +694,7 @@ function App() {
             snapshotPreview={snapshotPreview ?? undefined}
             snapshotPreviewLoading={snapshotPreviewLoading}
             onOpenTimeline={openTimeline}
-            onCloseTimeline={closeTimeline}
+            onCloseTimeline={closeTimelinePanel}
             onSelectSnapshot={handleSelectSnapshot}
             onRestoreSnapshot={handleRestoreSnapshot}
             onDeleteSnapshot={handleDeleteSnapshot}
@@ -685,7 +712,7 @@ function App() {
 
         <ProjectManagerDialog
           open={isManagerOpen}
-          onClose={() => setIsManagerOpen(false)}
+          onClose={() => setManagerOpen(false)}
           projects={projects}
           activeProjectId={activeProjectId}
           onCreate={handleCreateProject}
