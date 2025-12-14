@@ -2,10 +2,12 @@ import { app } from 'electron'
 import crypto from 'node:crypto'
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import type { Chapter, Project, ChapterSnapshot } from '../../src/shared/types'
+import type { Chapter, ChapterSnapshot, Project, StoryNodeKind } from '../../src/shared/types'
 
-type ChapterMeta = Omit<Chapter, 'draft' | 'autosaveTimestamp'>
-type ProjectMeta = Omit<Project, 'chapters'> & { chapters: ChapterMeta[] }
+type ChapterMeta = Omit<Chapter, 'draft' | 'autosaveTimestamp' | 'children'> & {
+  children?: ChapterMeta[]
+}
+type ProjectMeta = Omit<Project, 'structure' | 'chapters'> & { chapters: ChapterMeta[] }
 
 const DATA_ROOT = path.join(app.getPath('userData'), 'workspace')
 const PROJECTS_ROOT = path.join(DATA_ROOT, 'projects')
@@ -27,6 +29,141 @@ const getSnapshotDir = (projectId: string, chapterId: string) =>
 const getSnapshotPath = (projectId: string, chapterId: string, timestamp: number) =>
   path.join(getSnapshotDir(projectId, chapterId), `${timestamp}.snapshot`)
 const SNAPSHOT_PREVIEW_LIMIT = 200
+const DEFAULT_CHAPTER_KIND: StoryNodeKind = 'chapter'
+
+const normalizeChapterTree = (chapters: ChapterMeta[], fallbackTime: number): ChapterMeta[] => {
+  chapters.forEach((chapter) => {
+    chapter.kind = chapter.kind ?? DEFAULT_CHAPTER_KIND
+    chapter.children = normalizeChapterTree(chapter.children ?? [], fallbackTime)
+    chapter.updatedAt = chapter.updatedAt ?? fallbackTime
+    chapter.words = chapter.words ?? 0
+    chapter.summary = chapter.summary ?? ''
+    chapter.pace = chapter.pace ?? 'balanced'
+    chapter.mood = chapter.mood ?? '未设定'
+    chapter.status = chapter.status ?? 'outline'
+    if (chapter.kind === 'group') {
+      chapter.words = chapter.children.reduce((sum, child) => sum + child.words, 0)
+    }
+  })
+  return chapters
+}
+
+const flattenChapterTree = (chapters: Chapter[]): Chapter[] => {
+  const leaves: Chapter[] = []
+  const walk = (node: Chapter) => {
+    if (node.kind === 'chapter') {
+      leaves.push(node)
+    }
+    node.children?.forEach(walk)
+  }
+  chapters.forEach(walk)
+  return leaves
+}
+
+const findChapterMeta = (nodes: ChapterMeta[], chapterId: string): ChapterMeta | null => {
+  for (const node of nodes) {
+    if (node.id === chapterId) return node
+    const childMatch = findChapterMeta(node.children ?? [], chapterId)
+    if (childMatch) return childMatch
+  }
+  return null
+}
+
+const findChapterMetaWithParent = (
+  nodes: ChapterMeta[],
+  chapterId: string,
+  parent: ChapterMeta | null = null
+): { node: ChapterMeta; parent: ChapterMeta | null } | null => {
+  for (const node of nodes) {
+    if (node.id === chapterId) {
+      return { node, parent }
+    }
+    const match = findChapterMetaWithParent(node.children ?? [], chapterId, node)
+    if (match) return match
+  }
+  return null
+}
+
+const removeChapterMeta = (nodes: ChapterMeta[], chapterId: string): ChapterMeta | null => {
+  const index = nodes.findIndex((chapter) => chapter.id === chapterId)
+  if (index >= 0) {
+    const [removed] = nodes.splice(index, 1)
+    return removed
+  }
+  for (const node of nodes) {
+    const removed = removeChapterMeta(node.children ?? [], chapterId)
+    if (removed) return removed
+  }
+  return null
+}
+
+const insertChapterMeta = (nodes: ChapterMeta[], parentId: string | undefined, node: ChapterMeta): boolean => {
+  if (!parentId) {
+    nodes.push(node)
+    return true
+  }
+  for (const current of nodes) {
+    if (current.id === parentId) {
+      current.children = current.children ?? []
+      current.children.push(node)
+      return true
+    }
+    if (insertChapterMeta(current.children ?? [], parentId, node)) {
+      return true
+    }
+  }
+  return false
+}
+
+const reorderChapterChildren = (nodes: ChapterMeta[], parentId: string | null, order: string[]): boolean => {
+  const targetCollection = parentId
+    ? findChapterMeta(nodes, parentId)?.children
+    : nodes
+  if (!targetCollection) return false
+  const map = new Map(targetCollection.map((child) => [child.id, child]))
+  const reordered: ChapterMeta[] = []
+  order.forEach((id) => {
+    const item = map.get(id)
+    if (item) {
+      reordered.push(item)
+      map.delete(id)
+    }
+  })
+  map.forEach((value) => reordered.push(value))
+  if (parentId) {
+    const parent = findChapterMeta(nodes, parentId)
+    if (parent) {
+      parent.children = reordered
+      return true
+    }
+  } else {
+    nodes.splice(0, nodes.length, ...reordered)
+    return true
+  }
+  return false
+}
+
+const collectChapterIds = (node: ChapterMeta): string[] => {
+  if (node.kind === 'chapter') {
+    return [node.id]
+  }
+  return (node.children ?? []).flatMap(collectChapterIds)
+}
+
+const refreshAggregateWords = (node: ChapterMeta): number => {
+  if (node.kind === 'chapter') {
+    node.words = node.words ?? 0
+    return node.words
+  }
+  const total = (node.children ?? []).reduce((sum, child) => sum + refreshAggregateWords(child), 0)
+  node.words = total
+  return total
+}
+
+const refreshProjectAggregates = (meta: ProjectMeta) => {
+  meta.chapters.forEach(refreshAggregateWords)
+  updateProjectStats(meta)
+}
 
 const readFileIfExists = async (filePath: string) => {
   try {
@@ -66,12 +203,8 @@ const loadProjectMeta = async (projectId: string): Promise<ProjectMeta | null> =
       dirty = true
     }
     const fallbackTime = meta.updatedAt ?? meta.createdAt ?? Date.now()
-    for (const chapter of meta.chapters) {
-      if (!chapter.updatedAt) {
-        chapter.updatedAt = fallbackTime
-        dirty = true
-      }
-    }
+    meta.chapters = normalizeChapterTree(meta.chapters, fallbackTime)
+    refreshProjectAggregates(meta)
     if (dirty) {
       await writeProjectMeta(projectId, meta)
     }
@@ -102,6 +235,15 @@ const saveProjectOrder = async (order: string[]) => {
 }
 
 const loadChapterWithAutosave = async (projectId: string, chapterMeta: ChapterMeta): Promise<Chapter> => {
+  const children = await Promise.all((chapterMeta.children ?? []).map((child) => loadChapterWithAutosave(projectId, child)))
+  if (chapterMeta.kind === 'group') {
+    return {
+      ...chapterMeta,
+      draft: '',
+      autosaveTimestamp: undefined,
+      children
+    }
+  }
   const canonicalPath = getChapterFilePath(projectId, chapterMeta.id)
   const autosavePath = getAutosavePath(projectId, chapterMeta.id)
   const canonicalStat = await fs
@@ -123,12 +265,22 @@ const loadChapterWithAutosave = async (projectId: string, chapterMeta: ChapterMe
     ...chapterMeta,
     draft,
     autosaveTimestamp,
-    updatedAt: chapterMeta.updatedAt ?? Math.max(canonicalStat.mtimeMs, autosaveStat.mtimeMs, Date.now())
+    updatedAt: chapterMeta.updatedAt ?? Math.max(canonicalStat.mtimeMs, autosaveStat.mtimeMs, Date.now()),
+    children
   }
 }
 
+const sumLeafWords = (chapters: ChapterMeta[]): number => {
+  return chapters.reduce((sum, chapter) => {
+    if (chapter.kind === 'chapter') {
+      return sum + (chapter.words ?? 0)
+    }
+    return sum + sumLeafWords(chapter.children ?? [])
+  }, 0)
+}
+
 const updateProjectStats = (meta: ProjectMeta) => {
-  meta.stats.words = meta.chapters.reduce((sum, chapter) => sum + (chapter.words ?? 0), 0)
+  meta.stats.words = sumLeafWords(meta.chapters)
 }
 
 const recordSnapshot = async (projectId: string, chapterId: string, content: string) => {
@@ -156,14 +308,17 @@ export const listProjects = async (): Promise<Project[]> => {
     if (!entry.isDirectory()) continue
     const meta = await loadProjectMeta(entry.name)
     if (!meta) continue
-    const chapters: Chapter[] = []
+    const structure: Chapter[] = []
     for (const chapterMeta of meta.chapters) {
       const chapter = await loadChapterWithAutosave(entry.name, chapterMeta)
-      chapters.push(chapter)
+      structure.push(chapter)
     }
+    const flatChapters = flattenChapterTree(structure)
+    const { chapters: _ignored, ...restMeta } = meta
     projectsMap.set(entry.name, {
-      ...meta,
-      chapters
+      ...restMeta,
+      structure,
+      chapters: flatChapters
     })
   }
 
@@ -205,15 +360,18 @@ const readProject = async (projectId: string): Promise<Project | null> => {
   const meta = await loadProjectMeta(projectId)
   if (!meta) return null
 
-  const chapters: Chapter[] = []
+  const structure: Chapter[] = []
   for (const chapterMeta of meta.chapters) {
     const chapter = await loadChapterWithAutosave(projectId, chapterMeta)
-    chapters.push(chapter)
+    structure.push(chapter)
   }
+  const flatChapters = flattenChapterTree(structure)
+  const { chapters: _ignored, ...restMeta } = meta
 
   return {
-    ...meta,
-    chapters
+    ...restMeta,
+    structure,
+    chapters: flatChapters
   }
 }
 
@@ -253,6 +411,7 @@ export const createProject = async (title: string, description = ''): Promise<Pr
 
   return {
     ...initialMeta,
+    structure: [],
     chapters: []
   }
 }
@@ -261,40 +420,41 @@ const touchProject = (meta: ProjectMeta) => {
   meta.updatedAt = Date.now()
 }
 
-export const createChapter = async (projectId: string, title: string): Promise<Project | null> => {
+export const createChapter = async (
+  projectId: string,
+  title: string,
+  options?: { parentId?: string; kind?: StoryNodeKind; variant?: string }
+): Promise<Project | null> => {
   const meta = await loadProjectMeta(projectId)
   if (!meta) return null
 
   const chapterId = crypto.randomUUID()
-  const newChapter: Chapter = {
+  const kind = options?.kind ?? DEFAULT_CHAPTER_KIND
+  const nodeMeta: ChapterMeta = {
     id: chapterId,
     title,
+    kind,
+    variant: options?.variant,
     words: 0,
     status: 'outline',
     pace: 'balanced',
     mood: '未设定',
     summary: '',
-    draft: '',
     updatedAt: Date.now()
   }
 
-  meta.chapters.push({
-    id: chapterId,
-    title,
-    words: 0,
-    status: newChapter.status,
-    pace: newChapter.pace,
-    mood: newChapter.mood,
-    summary: newChapter.summary,
-    updatedAt: newChapter.updatedAt
-  })
+  nodeMeta.children = []
+  insertChapterMeta(meta.chapters, options?.parentId, nodeMeta)
 
-  updateProjectStats(meta)
+  if (kind === 'chapter') {
+    await ensureDir(path.join(getProjectDir(projectId), 'chapters'))
+    await fs.writeFile(getChapterFilePath(projectId, chapterId), '', 'utf-8')
+  }
+
+  refreshProjectAggregates(meta)
   touchProject(meta)
 
   await writeProjectMeta(projectId, meta)
-  await ensureDir(path.join(getProjectDir(projectId), 'chapters'))
-  await fs.writeFile(getChapterFilePath(projectId, chapterId), '', 'utf-8')
 
   const project = await readProject(projectId)
   return project
@@ -305,10 +465,11 @@ export const autosaveChapter = async (projectId: string, chapterId: string, cont
   await fs.writeFile(getAutosavePath(projectId, chapterId), content, 'utf-8')
   const meta = await loadProjectMeta(projectId)
   if (meta) {
-    const chapterMeta = meta.chapters.find((chapter) => chapter.id === chapterId)
+    const chapterMeta = findChapterMeta(meta.chapters, chapterId)
     if (chapterMeta) {
       chapterMeta.updatedAt = Date.now()
       chapterMeta.words = [...content].length
+      refreshAggregateWords(chapterMeta)
     }
     touchProject(meta)
     await writeProjectMeta(projectId, meta)
@@ -320,7 +481,7 @@ export const saveChapter = async (projectId: string, chapterId: string, content:
   const meta = await loadProjectMeta(projectId)
   if (!meta) return null
 
-  const chapterMeta = meta.chapters.find((chapter) => chapter.id === chapterId)
+  const chapterMeta = findChapterMeta(meta.chapters, chapterId)
   if (!chapterMeta) return null
 
   const canonicalPath = getChapterFilePath(projectId, chapterId)
@@ -332,7 +493,7 @@ export const saveChapter = async (projectId: string, chapterId: string, content:
 
   chapterMeta.words = [...content].length
   chapterMeta.updatedAt = Date.now()
-  updateProjectStats(meta)
+  refreshProjectAggregates(meta)
   touchProject(meta)
 
   await writeProjectMeta(projectId, meta)
@@ -348,38 +509,49 @@ export const saveChapter = async (projectId: string, chapterId: string, content:
 export const deleteChapter = async (projectId: string, chapterId: string): Promise<Project | null> => {
   const meta = await loadProjectMeta(projectId)
   if (!meta) return null
-  const index = meta.chapters.findIndex((chapter) => chapter.id === chapterId)
-  if (index === -1) return null
-  meta.chapters.splice(index, 1)
-  updateProjectStats(meta)
+  const removed = removeChapterMeta(meta.chapters, chapterId)
+  if (!removed) return null
+  const leafChapterIds = collectChapterIds(removed)
+  refreshProjectAggregates(meta)
   touchProject(meta)
   await writeProjectMeta(projectId, meta)
-  await removeFileIfExists(getChapterFilePath(projectId, chapterId))
-  await removeFileIfExists(getAutosavePath(projectId, chapterId))
-  try {
-    await fs.rm(getSnapshotDir(projectId, chapterId), { recursive: true, force: true })
-  } catch {
-    // ignore
+  for (const leafId of leafChapterIds) {
+    await removeFileIfExists(getChapterFilePath(projectId, leafId))
+    await removeFileIfExists(getAutosavePath(projectId, leafId))
+    try {
+      await fs.rm(getSnapshotDir(projectId, leafId), { recursive: true, force: true })
+    } catch {
+      // ignore
+    }
   }
   return readProject(projectId)
 }
 
-export const reorderChapters = async (projectId: string, order: string[]): Promise<Project | null> => {
+export const moveChapter = async (
+  projectId: string,
+  chapterId: string,
+  targetParentId: string | null
+): Promise<Project | null> => {
   const meta = await loadProjectMeta(projectId)
   if (!meta) return null
-  const map = new Map(meta.chapters.map((chapter) => [chapter.id, chapter] as const))
-  const next: ChapterMeta[] = []
-  for (const id of order) {
-    const match = map.get(id)
-    if (match) {
-      next.push(match)
-      map.delete(id)
-    }
-  }
-  for (const leftover of map.values()) {
-    next.push(leftover)
-  }
-  meta.chapters = next
+  const removed = removeChapterMeta(meta.chapters, chapterId)
+  if (!removed) return null
+  insertChapterMeta(meta.chapters, targetParentId ?? undefined, removed)
+  refreshProjectAggregates(meta)
+  touchProject(meta)
+  await writeProjectMeta(projectId, meta)
+  return readProject(projectId)
+}
+
+export const reorderChapters = async (
+  projectId: string,
+  parentId: string | null,
+  order: string[]
+): Promise<Project | null> => {
+  const meta = await loadProjectMeta(projectId)
+  if (!meta) return null
+  reorderChapterChildren(meta.chapters, parentId, order)
+  refreshProjectAggregates(meta)
   touchProject(meta)
   await writeProjectMeta(projectId, meta)
   return readProject(projectId)

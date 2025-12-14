@@ -1,10 +1,13 @@
 export type ThemeMode = 'dark' | 'light'
 
 export type ChapterStatus = 'outline' | 'draft' | 'final'
+export type StoryNodeKind = 'group' | 'chapter'
 
 export interface Chapter {
   id: string
   title: string
+  kind: StoryNodeKind
+  variant?: string
   words: number
   status: ChapterStatus
   pace: 'slow burn' | 'balanced' | 'fast'
@@ -13,6 +16,7 @@ export interface Chapter {
   summary: string
   updatedAt: number
   autosaveTimestamp?: number
+  children?: Chapter[]
 }
 
 export interface ChapterSnapshot {
@@ -43,6 +47,7 @@ export interface Project {
     words: number
     characters: number
   }
+  structure: Chapter[]
   chapters: Chapter[]
   notes: Note[]
   progress: {

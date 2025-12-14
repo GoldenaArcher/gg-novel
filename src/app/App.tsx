@@ -1,11 +1,49 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import '../styles/app.scss'
 import { EditorPanel } from '../features/editor/components/EditorPanel'
 import { LibrarySidebar } from '../features/library/components/LibrarySidebar'
 import { InsightsPanel } from '../features/notes/components/InsightsPanel'
 import { ProjectManagerDialog } from '../features/library/components/ProjectManagerDialog'
-import { ThemeMode, Project, ChapterSnapshot } from '../shared/types'
+import { ThemeMode, Project, ChapterSnapshot, Chapter, StoryNodeKind } from '../shared/types'
 import { projectBridge } from '../services/ipcClient'
+
+const patchStructureNode = (
+  node: Chapter,
+  chapterId: string,
+  updater: (node: Chapter) => Chapter
+): { node: Chapter; changed: boolean } => {
+  if (node.id === chapterId) {
+    return { node: updater(node), changed: true }
+  }
+  if (!node.children?.length) {
+    return { node, changed: false }
+  }
+  let childChanged = false
+  const updatedChildren = node.children.map((child) => {
+    const result = patchStructureNode(child, chapterId, updater)
+    if (result.changed) childChanged = true
+    return result.node
+  })
+  if (childChanged) {
+    const updatedNode: Chapter = {
+      ...node,
+      children: updatedChildren,
+      words: node.kind === 'group' ? updatedChildren.reduce((sum, child) => sum + child.words, 0) : node.words
+    }
+    return { node: updatedNode, changed: true }
+  }
+  return { node, changed: false }
+}
+
+const patchStructureById = (structure: Chapter[], chapterId: string, updater: (node: Chapter) => Chapter) => {
+  let changed = false
+  const nodes = structure.map((node) => {
+    const result = patchStructureNode(node, chapterId, updater)
+    if (result.changed) changed = true
+    return result.node
+  })
+  return changed ? nodes : structure
+}
 
 const getInitialTheme = (): ThemeMode => {
   if (typeof window === 'undefined') {
@@ -32,6 +70,7 @@ function App() {
   )
 
   const [activeChapterId, setActiveChapterId] = useState(activeProjectSource?.chapters[0]?.id ?? '')
+  const [allowChapterless, setAllowChapterless] = useState(false)
   const activeChapterSource = useMemo(
     () => activeProjectSource?.chapters.find((chapter) => chapter.id === activeChapterId),
     [activeProjectSource, activeChapterId]
@@ -50,6 +89,13 @@ function App() {
   const [deletingSnapshot, setDeletingSnapshot] = useState<number | null>(null)
   const autosaveProjectId = activeProjectSource?.id
   const autosaveChapterId = activeChapterSource?.id
+  const SIDEBAR_MIN_WIDTH = 220
+  const SIDEBAR_COLLAPSE_WIDTH = 160
+  const SIDEBAR_MAX_WIDTH = 420
+  const [sidebarWidth, setSidebarWidth] = useState(280)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [resizingSidebar, setResizingSidebar] = useState(false)
+  const sidebarDragRef = useRef<{ startX: number; width: number } | null>(null)
 
   useEffect(() => {
     projectBridge
@@ -62,6 +108,7 @@ function App() {
     if (projects.length === 0) {
       if (activeProjectId) setActiveProjectId('')
       if (activeChapterId) setActiveChapterId('')
+      setAllowChapterless(false)
       return
     }
 
@@ -69,6 +116,7 @@ function App() {
       const firstProject = projects[0]
       setActiveProjectId(firstProject.id)
       setActiveChapterId(firstProject.chapters[0]?.id ?? '')
+      setAllowChapterless(false)
       return
     }
 
@@ -77,6 +125,7 @@ function App() {
       const fallback = projects[0]
       setActiveProjectId(fallback.id)
       setActiveChapterId(fallback.chapters[0]?.id ?? '')
+      setAllowChapterless(false)
       return
     }
 
@@ -85,11 +134,20 @@ function App() {
       const chapterExists = project.chapters.some((chapter) => chapter.id === activeChapterId)
       if (!chapterExists) {
         setActiveChapterId(project.chapters[0]?.id ?? '')
+        setAllowChapterless(false)
       }
     } else if (project && !activeChapterId) {
-      setActiveChapterId(project.chapters[0]?.id ?? '')
+      if (!allowChapterless) {
+        setActiveChapterId(project.chapters[0]?.id ?? '')
+      }
     }
-  }, [projects, activeProjectId, activeChapterId])
+  }, [projects, activeProjectId, activeChapterId, allowChapterless])
+
+  useEffect(() => {
+    if (activeChapterId) {
+      setAllowChapterless(false)
+    }
+  }, [activeChapterId])
 
   useEffect(() => {
     setDraftText(activeChapterSource?.draft ?? '')
@@ -123,11 +181,17 @@ function App() {
           ? { ...chapter, draft: draftText, words: nextWords, updatedAt: now }
           : chapter
       )
+      const updatedStructure = patchStructureById(
+        project.structure ?? [],
+        autosaveChapterId,
+        (node) => ({ ...node, draft: draftText, words: nextWords, updatedAt: now })
+      )
       const updatedStats = wordsChanged
         ? { ...project.stats, words: project.stats.words - targetChapter.words + nextWords }
         : project.stats
       return {
         ...project,
+        structure: updatedStructure,
         chapters: updatedChapters,
         stats: updatedStats
       }
@@ -175,26 +239,51 @@ function App() {
     [autosaveProjectId, autosaveChapterId]
   )
 
+  const loadSnapshots = useCallback(
+    async (options?: { selectFirst?: boolean }) => {
+      if (!autosaveProjectId || !autosaveChapterId) {
+        setTimelineEntries([])
+        setSelectedSnapshot(null)
+        setSnapshotPreview(null)
+        return []
+      }
+      setTimelineLoading(true)
+      try {
+        const entries = await projectBridge.listSnapshots(autosaveProjectId, autosaveChapterId)
+        setTimelineEntries(entries)
+        if (entries.length === 0) {
+          setSelectedSnapshot(null)
+          setSnapshotPreview(null)
+        } else if (options?.selectFirst) {
+          await handleSelectSnapshot(entries[0].timestamp)
+        }
+        return entries
+      } catch (error) {
+        console.error('Failed to load snapshots', error)
+        setTimelineEntries([])
+        setSelectedSnapshot(null)
+        setSnapshotPreview(null)
+        return []
+      } finally {
+        setTimelineLoading(false)
+      }
+    },
+    [autosaveProjectId, autosaveChapterId, handleSelectSnapshot]
+  )
+
+  useEffect(() => {
+    loadSnapshots()
+  }, [loadSnapshots])
+
   const openTimeline = useCallback(async () => {
     if (!autosaveProjectId || !autosaveChapterId) return
     setIsTimelineOpen(true)
-    setTimelineLoading(true)
-    try {
-      const entries = await projectBridge.listSnapshots(autosaveProjectId, autosaveChapterId)
-      setTimelineEntries(entries)
-      if (entries.length > 0) {
-        await handleSelectSnapshot(entries[0].timestamp)
-      } else {
-        setSelectedSnapshot(null)
-        setSnapshotPreview(null)
-      }
-    } catch (error) {
-      console.error('Failed to load snapshots', error)
-      setTimelineEntries([])
-    } finally {
-      setTimelineLoading(false)
+    if (timelineEntries.length === 0) {
+      await loadSnapshots({ selectFirst: true })
+    } else if (!selectedSnapshot && timelineEntries.length > 0) {
+      await handleSelectSnapshot(timelineEntries[0].timestamp)
     }
-  }, [autosaveProjectId, autosaveChapterId, handleSelectSnapshot])
+  }, [autosaveProjectId, autosaveChapterId, timelineEntries, loadSnapshots, selectedSnapshot, handleSelectSnapshot])
 
   const handleRestoreSnapshot = useCallback(() => {
     if (!snapshotPreview) return
@@ -208,21 +297,14 @@ function App() {
       setDeletingSnapshot(timestamp)
       try {
         await projectBridge.deleteSnapshot(autosaveProjectId, autosaveChapterId, timestamp)
-        const entries = await projectBridge.listSnapshots(autosaveProjectId, autosaveChapterId)
-        setTimelineEntries(entries)
-        if (entries.length > 0) {
-          await handleSelectSnapshot(entries[0].timestamp)
-        } else {
-          setSelectedSnapshot(null)
-          setSnapshotPreview(null)
-        }
+        await loadSnapshots({ selectFirst: true })
       } catch (error) {
         console.error('Failed to delete snapshot', error)
       } finally {
         setDeletingSnapshot(null)
       }
     },
-    [autosaveProjectId, autosaveChapterId, handleSelectSnapshot]
+    [autosaveProjectId, autosaveChapterId, handleSelectSnapshot, loadSnapshots]
   )
 
   const activeProjectView = useMemo(
@@ -254,28 +336,32 @@ function App() {
       syncProject(project)
       setActiveProjectId(project.id)
       setActiveChapterId(project.chapters[0]?.id ?? '')
+      setAllowChapterless(false)
     },
     [syncProject]
   )
 
-  const handleCreateChapter = useCallback(async (title?: string) => {
-    if (!activeProjectSource) return
-    let nextTitle = title?.trim()
-    if (!nextTitle) {
-      const input = window.prompt('输入新章节标题')
-      if (!input) return
-      nextTitle = input.trim()
-      if (!nextTitle) return
-    }
-    const updated = await projectBridge.createChapter(activeProjectSource.id, nextTitle)
-    if (updated) {
-      syncProject(updated)
-      const latest = updated.chapters[updated.chapters.length - 1]
-      if (latest) {
-        setActiveChapterId(latest.id)
+  const handleCreateChapter = useCallback(
+    async (projectId: string, title?: string, options?: { parentId?: string; kind?: StoryNodeKind }) => {
+      let nextTitle = title?.trim()
+      if (!nextTitle) {
+        const input = window.prompt(options?.kind === 'group' ? '输入结构名称' : '输入新章节标题')
+        if (!input) return
+        nextTitle = input.trim()
+        if (!nextTitle) return
       }
-    }
-  }, [activeProjectSource, syncProject])
+      const updated = await projectBridge.createChapter(projectId, nextTitle, options)
+      if (updated) {
+        syncProject(updated)
+        const latest = updated.chapters[updated.chapters.length - 1]
+        if (latest && latest.kind === 'chapter' && projectId === activeProjectId) {
+          setActiveChapterId(latest.id)
+          setAllowChapterless(false)
+        }
+      }
+    },
+    [activeProjectId, syncProject]
+  )
 
   const handleDeleteChapter = useCallback(
     async (projectId: string, chapterId: string) => {
@@ -284,15 +370,25 @@ function App() {
         syncProject(updated)
         if (chapterId === activeChapterId) {
           setActiveChapterId(updated.chapters[0]?.id ?? '')
+          setAllowChapterless(false)
         }
       }
     },
     [activeChapterId, syncProject]
   )
 
+  const handleMoveChapter = useCallback(
+    async (projectId: string, chapterId: string, targetParentId: string | null) => {
+      const updated = await projectBridge.moveChapter(projectId, chapterId, targetParentId)
+      if (updated) {
+        syncProject(updated)
+      }
+    },
+    [syncProject]
+  )
   const handleReorderChapters = useCallback(
-    async (projectId: string, order: string[]) => {
-      const updated = await projectBridge.reorderChapters(projectId, order)
+    async (projectId: string, parentId: string | null, order: string[]) => {
+      const updated = await projectBridge.reorderChapters(projectId, parentId, order)
       if (updated) {
         syncProject(updated)
       }
@@ -335,7 +431,8 @@ function App() {
       setProjects(refreshed)
       if (activeProjectId === projectId) {
         setActiveProjectId('')
-        setActiveChapterId('')
+      setActiveChapterId('')
+      setAllowChapterless(false)
       }
     },
     [activeProjectId]
@@ -393,50 +490,117 @@ function App() {
     setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))
   }
 
+  const startSidebarResize = (event: React.MouseEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    const initialWidth = sidebarCollapsed ? SIDEBAR_MIN_WIDTH : sidebarWidth
+    sidebarDragRef.current = { startX: event.clientX, width: initialWidth }
+    if (sidebarCollapsed) {
+      setSidebarCollapsed(false)
+      setSidebarWidth(initialWidth)
+    }
+    setResizingSidebar(true)
+  }
+
+  useEffect(() => {
+    if (!resizingSidebar || !sidebarDragRef.current) return
+    const handleMove = (event: MouseEvent) => {
+      const delta = event.clientX - sidebarDragRef.current!.startX
+      let nextWidth = sidebarDragRef.current!.width + delta
+      if (nextWidth <= SIDEBAR_COLLAPSE_WIDTH) {
+        setSidebarCollapsed(true)
+        setResizingSidebar(false)
+        return
+      }
+      nextWidth = Math.max(SIDEBAR_MIN_WIDTH, Math.min(SIDEBAR_MAX_WIDTH, nextWidth))
+      setSidebarCollapsed(false)
+      setSidebarWidth(nextWidth)
+    }
+    const handleUp = () => {
+      setResizingSidebar(false)
+      sidebarDragRef.current = null
+    }
+    window.addEventListener('mousemove', handleMove)
+    window.addEventListener('mouseup', handleUp)
+    return () => {
+      window.removeEventListener('mousemove', handleMove)
+      window.removeEventListener('mouseup', handleUp)
+    }
+  }, [resizingSidebar, SIDEBAR_COLLAPSE_WIDTH, SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH, sidebarCollapsed, sidebarWidth])
+
+  const reopenSidebar = () => {
+    setSidebarCollapsed(false)
+    setSidebarWidth(Math.max(sidebarWidth || SIDEBAR_MIN_WIDTH, SIDEBAR_MIN_WIDTH))
+  }
+
+  const sidebarColumnWidth = sidebarCollapsed ? 0 : sidebarWidth
+  const shellStyle = {
+    '--sidebar-width': `${sidebarColumnWidth}px`
+  } as CSSProperties
+
   return (
-    <div className="app-shell">
-      <LibrarySidebar
-        projects={projectsView}
-        activeProjectId={activeProjectId}
-        activeChapterId={activeChapterId}
-        onProjectSelect={setActiveProjectId}
-        onChapterSelect={setActiveChapterId}
-        onCreateProject={handleCreateProject}
-        onCreateChapter={handleCreateChapter}
-        onOpenProjectManager={() => setIsManagerOpen(true)}
-        onReorderProjects={handleReorderProjects}
-        onDeleteProject={handleDeleteProject}
-        onDeleteChapter={handleDeleteChapter}
-        onReorderChapters={handleReorderChapters}
-      />
+    <div className={`app-shell${sidebarCollapsed ? ' sidebar-collapsed' : ''}`} style={shellStyle}>
+      <div className={`sidebar-container${sidebarCollapsed ? ' collapsed' : ''}`}>
+        {!sidebarCollapsed ? (
+          <LibrarySidebar
+            projects={projectsView}
+            activeProjectId={activeProjectId}
+            activeChapterId={activeChapterId}
+            snapshots={timelineEntries}
+            onProjectSelect={setActiveProjectId}
+            onChapterSelect={(chapterId) => {
+              setAllowChapterless(chapterId === '')
+              setActiveChapterId(chapterId)
+            }}
+            onCreateProject={handleCreateProject}
+            onCreateChapter={handleCreateChapter}
+            onOpenProjectManager={() => setIsManagerOpen(true)}
+            onReorderProjects={handleReorderProjects}
+            onDeleteProject={handleDeleteProject}
+            onDeleteChapter={handleDeleteChapter}
+            onReorderChapters={handleReorderChapters}
+            onMoveChapter={handleMoveChapter}
+            onOpenTimeline={openTimeline}
+          />
+        ) : (
+          <button className="sidebar-expand-button" type="button" onClick={reopenSidebar}>
+            展开侧栏
+          </button>
+        )}
+      </div>
 
-      <EditorPanel
-        projectTitle={activeProjectView?.title}
-        chapter={activeChapterView}
-        draftText={draftText}
-        onDraftChange={setDraftText}
-        isAutosaving={isAutosaving}
-        autosaveTimestamp={lastAutosaveAt}
-        currentTime={nowTick}
-        isTimelineOpen={isTimelineOpen}
-        timelineEntries={timelineEntries}
-        timelineLoading={timelineLoading}
-        selectedSnapshot={selectedSnapshot ?? undefined}
-        snapshotPreview={snapshotPreview ?? undefined}
-        snapshotPreviewLoading={snapshotPreviewLoading}
-        onOpenTimeline={openTimeline}
-        onCloseTimeline={closeTimeline}
-        onSelectSnapshot={handleSelectSnapshot}
-        onRestoreSnapshot={handleRestoreSnapshot}
-        onDeleteSnapshot={handleDeleteSnapshot}
-        deletingSnapshot={deletingSnapshot}
-        disableTimeline={isManagerOpen}
-        theme={theme}
-        onToggleTheme={handleThemeToggle}
-        onSaveChapter={handleChapterSave}
-      />
+      <div className={`sidebar-resizer${sidebarCollapsed ? ' hidden' : ''}`} onMouseDown={startSidebarResize} />
 
-      <InsightsPanel notes={activeProjectView?.notes} progress={activeProjectView?.progress} />
+      <div className="editor-container">
+        <EditorPanel
+          projectTitle={activeProjectView?.title}
+          chapter={activeChapterView}
+          draftText={draftText}
+          onDraftChange={setDraftText}
+          isAutosaving={isAutosaving}
+          autosaveTimestamp={lastAutosaveAt}
+          currentTime={nowTick}
+          isTimelineOpen={isTimelineOpen}
+          timelineEntries={timelineEntries}
+          timelineLoading={timelineLoading}
+          selectedSnapshot={selectedSnapshot ?? undefined}
+          snapshotPreview={snapshotPreview ?? undefined}
+          snapshotPreviewLoading={snapshotPreviewLoading}
+          onOpenTimeline={openTimeline}
+          onCloseTimeline={closeTimeline}
+          onSelectSnapshot={handleSelectSnapshot}
+          onRestoreSnapshot={handleRestoreSnapshot}
+          onDeleteSnapshot={handleDeleteSnapshot}
+          deletingSnapshot={deletingSnapshot}
+          disableTimeline={isManagerOpen}
+          theme={theme}
+          onToggleTheme={handleThemeToggle}
+          onSaveChapter={handleChapterSave}
+        />
+      </div>
+
+      <div className="details-container">
+        <InsightsPanel project={activeProjectView ?? undefined} notes={activeProjectView?.notes} progress={activeProjectView?.progress} />
+      </div>
 
       <ProjectManagerDialog
         open={isManagerOpen}

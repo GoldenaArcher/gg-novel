@@ -41,6 +41,13 @@ body.modal-open {
   overflow: hidden;
 }
 
+@media (max-width: 1100px) {
+  body {
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+}
+
 a {
   color: inherit;
 }

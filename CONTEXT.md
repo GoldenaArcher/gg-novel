@@ -6,41 +6,74 @@ This document describes the higher-level goals, responsibilities, and current im
 
 - `electron/`: Main-process source. `main.ts` boots the window and loads either the dev server or built renderer; `preload.ts` exposes safe bridges to the renderer.
 - `public/`: Static assets copied as-is into the renderer build (icons, splash graphics, etc.).
-- `src/app/`: Top-level React application wiring (global state, theming, layout composition).
+- `src/app/`: Top-level React application wiring (global state, theming, layout composition, sidebar resizing).
 - `src/features/`: Feature-specific UI slices.
-  - `src/features/editor/`: Editor panel modules (composition, drafting textarea, writing actions).
-  - `src/features/library/`: Library sidebar modules (project and chapter navigation).
+  - `src/features/editor/`: Editor panel modules (composition, drafting textarea, writing actions, timeline viewer).
+  - `src/features/library/`: Library sidebar modules (project and chapter navigation with hierarchical tree structure, project manager dashboard).
   - `src/features/notes/`: Notes & Insights modules (inspiration cards, progress tracking).
 - `src/data/`: Future data adapters (API clients, migrations, import/export helpers). Currently unused because persistence lives in the Electron main process.
-- `src/shared/`: Cross-cutting types and utilities (e.g., `types.ts` for Chapter, Project, ThemeMode definitions) that multiple features consume.
+- `src/shared/`: Cross-cutting types and utilities (e.g., `types.ts` for Chapter, Project, ThemeMode, StoryNodeKind definitions) that multiple features consume.
 - `src/shared/components/ModalPortal.tsx`: React portal wrapper used by every modal (project manager, timeline, future dialogs). Handles scroll locking by toggling `body.modal-open`.
-- `src/styles/`: Global Sass setup. `_tokens.scss` defines theme variables, `_mixins.scss` contains reusable style patterns, `base.scss` resets the page + theme variables, and `app.scss` styles the shell components.
+- `src/styles/`: Global Sass setup. `_tokens.scss` defines theme variables, `_mixins.scss` contains reusable style patterns, `base.scss` resets the page + theme variables, and `app.scss` styles the shell components including CSS custom properties for dynamic sizing.
 - `dist/`, `dist-electron/`, `release/`: Generated output after running `npm run build` (renderer bundle, Electron bundle, and packaged apps). These folders are created during builds and can be cleaned if necessary.
-- `electron/services/`: Main-process utilities. `projectStore.ts` is the filesystem-backed persistence layer (projects, chapters, autosave cache, snapshot timeline).
+- `electron/services/`: Main-process utilities. `projectStore.ts` is the filesystem-backed persistence layer (projects, chapters, autosave cache, snapshot timeline, hierarchical structure management).
 
 ## Features
 
 ### Editor
 
-- **Surface**: `src/features/editor/components/EditorPanel.tsx`
+- **Surface**: `src/features/editor/components/EditorPanel.tsx`, `TimelinePanel.tsx`
 - **Purpose**: Focused drafting space for the currently selected chapter.
 - **Key behaviors**:
   - Displays project title, chapter title, and metadata (pace, mood, summary).
   - Owns the main text area. The value is controlled by `App` state so future persistence (autosave, versioning) can plug in easily.
-  - Exposes actions: theme toggle, history/timeline, focus mode, and footer actions (`TODO` flag, fragment export).
-  - Timeline panel mimics VS Code’s history view: clicking “历史版本” fetches snapshot summaries, shows previews, supports deleting snapshots, and lets the user restore a snapshot back into the editor buffer.
-- **Styling notes**: Pulls shared style tokens via `app.scss`; textarea uses the mono font stack defined in `base.scss`.
+  - Exposes actions: theme toggle, manual save button, timeline/history viewer, and focus mode.
+  - **Timeline panel** (`TimelinePanel.tsx`): Mimics VS Code's history view:
+    - Clicking "历史版本" fetches snapshot summaries
+    - Shows previews with word counts and timestamps in readable format (e.g., "2023-12-14 10:30:15")
+    - Supports selecting snapshots to view detailed preview
+    - Supports deleting snapshots with confirmation
+    - Lets the user restore a snapshot back into the editor buffer
+    - Accessible via modal overlay with dedicated preview pane
+  - **Autosave status**: Displayed in the footer showing word count and relative time since last autosave (e.g., "刚刚", "5 分钟前", "2 小时前", "3 天前").
+  - **Smart save**: Manual save button triggers save operation; the backend compares content and only creates new snapshots if the content has actually changed (after normalizing trailing whitespace).
+- **Styling notes**: Pulls shared style tokens via `app.scss`; textarea uses the mono font stack defined in `base.scss`. Supports CSS custom properties for dynamic theming (properly typed using `as CSSProperties` pattern).
 
 ### Library
 
-- **Surface**: `src/features/library/components/LibrarySidebar.tsx`
-- **Purpose**: Manage multiple projects and their chapter lists.
+- **Surface**: `src/features/library/components/LibrarySidebar.tsx`, `ProjectManagerDialog.tsx`
+- **Purpose**: Manage multiple projects and their hierarchical chapter structure.
 - **Key behaviors**:
-  - Project switcher (pill buttons) to jump between novel universes; stats (word count, character cards) provide quick context.
-  - Chapter list shows status badges (outline/draft/final) and word counts. Clicking a chapter updates the global editor state.
-  - Project list supports drag-and-drop ordering (inline pills first, then the manager dialog). Order is persisted via IPC.
-  - Project manager dialog (`ProjectManagerDialog`) now acts as a dashboard: creation accepts an optional description, cards expose stats/metadata, search filters by title or description, sort modes (manual/updated/created/title) change the view without mutating the persisted order, drag reorder is available when manual mode is active, descriptions can be edited inline, any project can be activated directly, and destructive actions still require confirmation.
-- **Data flow**: Receives the canonical projects array + active IDs from `App`. Reorder operations call back to `App`, which forwards the desired order to the main process.
+  - **Project switcher**: Pill buttons at the top to jump between novel projects; displays stats (word count, character cards) for quick context.
+  - **Hierarchical chapter tree**: Supports nested structure with groups and chapters. Chapters can be organized into groups (folders) and nested arbitrarily deep:
+    - **Groups** (`kind: 'group'`): Collapsible folders that contain other groups or chapters. Display aggregate word counts from all descendant chapters. Can have optional `variant` field for sub-categorization (e.g., "arc", "volume", "part").
+    - **Chapters** (`kind: 'chapter'`): Leaf nodes containing actual content. Show status badges (outline/draft/final) and word counts.
+  - **Tree navigation**: Click to expand/collapse groups, select chapters for editing. Visual indentation shows nesting depth (via CSS depth multiplier).
+  - **CRUD operations**: 
+    - Create new chapters or groups at any level (root or nested under a parent) via "+" buttons
+    - Delete nodes (removes all descendants if it's a group, including all nested content files)
+    - Move nodes via drag-and-drop to reparent them (changes parent relationship)
+    - Reorder siblings via drag-and-drop (maintains same parent, changes order)
+  - **Three-pane layout**: Sidebar is split into three independently resizable panes:
+    - **Explorer**: Project list and chapter tree with hierarchical navigation
+    - **Outline**: Flattened view of the entire story structure for quick overview (depth-based indentation)
+    - **Timeline**: Recent snapshot history for the active chapter with timestamps and word counts
+  - Each pane can be collapsed independently; resizer handles (8px height) allow dynamic height adjustment with minimum/collapse thresholds (MIN_PANE_HEIGHT: 180px, COLLAPSE_THRESHOLD: 108px, COLLAPSED_PANE_HEIGHT: 44px).
+  - **Project manager dialog** (`ProjectManagerDialog.tsx`): Acts as a comprehensive dashboard:
+    - Creation accepts title and optional description
+    - Project cards expose stats, metadata, and timestamps (createdAt, updatedAt)
+    - Search filters by title or description
+    - Sort modes: manual (drag reorder), updated date (most recent first), created date, or title (alphabetical)
+    - Drag reorder available only when manual sort mode is active
+    - Descriptions can be edited inline
+    - Direct project activation from the manager
+    - Destructive actions (delete) require confirmation
+  - **Sidebar resizing**: The entire sidebar can be resized horizontally:
+    - Width range: 220-420px (SIDEBAR_MIN_WIDTH to SIDEBAR_MAX_WIDTH)
+    - Collapsible to ~0px to save screen space (SIDEBAR_COLLAPSE_WIDTH: 160px threshold)
+    - Uses CSS custom properties (`--sidebar-width`) for dynamic sizing
+    - Drag handle on right edge with visual feedback during resize
+- **Data flow**: Receives canonical projects array + active IDs from `App`. All mutations (create, delete, move, reorder) call back to `App`, which forwards to main process via IPC. The hierarchical structure is persisted as nested `children` arrays in the project metadata. Both `structure` (hierarchical tree) and `chapters` (flat list) are maintained for different use cases.
 
 ### Notes & Insights
 
@@ -54,18 +87,94 @@ This document describes the higher-level goals, responsibilities, and current im
 
 ## Shared Concepts
 
-- `src/shared/types.ts`: Source of truth for `Project`, `Chapter`, `Note`, and `ThemeMode`. `Project` carries `createdAt`, `updatedAt`, and an optional `description` so both deterministic ordering and recency/search experiences work seamlessly.
-- `src/data/`: Reserved for data migrations/importers if we need to move beyond the built-in filesystem store.
-- `src/styles/`: Token-driven styling system; components are expected to lean on the CSS variables to stay in sync across themes. Global base styles also manage modal scroll locking so the root layout stays fixed while dialogs scroll internally.
+- **`src/shared/types.ts`**: Source of truth for core data structures:
+  - `Project`: Contains `id`, `title`, `description`, `createdAt`, `updatedAt`, `stats`, `structure` (hierarchical tree), `chapters` (flat list for iteration), `notes`, and `progress`.
+  - `Chapter`: Contains `id`, `title`, `kind` ('group' | 'chapter'), optional `variant`, `words`, `status`, `pace`, `mood`, `draft`, `summary`, `updatedAt`, optional `autosaveTimestamp`, and optional `children` array for hierarchy.
+  - `ChapterSnapshot`: Contains `timestamp`, `words`, `preview` (truncated text excerpt).
+  - `StoryNodeKind`: Type alias for `'group' | 'chapter'` to distinguish between containers and content.
+  - `ThemeMode`: Type alias for `'dark' | 'light'`.
+- **`src/data/`**: Reserved for data migrations/importers if we need to move beyond the built-in filesystem store.
+- **`src/styles/`**: Token-driven styling system; components are expected to lean on the CSS variables to stay in sync across themes. Global base styles also manage modal scroll locking so the root layout stays fixed while dialogs scroll internally.
+- **State management**: `App.tsx` uses `patchStructureNode` and `patchStructureById` utility functions to immutably update nested chapter structures when individual chapters change (e.g., after autosave).
 
-### Storage & Persistence
+## Storage & Persistence
 
-- Location: Electron’s `app.getPath('userData')/workspace/`. Each project receives its own folder with `project.json` metadata, `chapters/` markdown files, `autosave/` cache files, and `timeline/<chapterId>/` snapshot history.
-- Ordering: `workspace/projects.json` stores an array of project IDs representing the preferred order. New projects append by default; drag/drop reorder updates this file.
-- Autosave: Renderer sends debounced updates via IPC; the main process writes to `autosave/<chapterId>.draft`. On launch the fresher autosave replaces the canonical draft automatically.
-- Official saves: `chapters/<chapterId>.md` stores the canonical text, metadata updates word counts, and a snapshot (`timeline/<chapterId>/<timestamp>.snapshot`) is recorded with a rolling retention limit (20 files). Autosave files are cleared after successful saves.
-- Timeline API: Renderer can list snapshot metadata (`snapshots:list`), load specific snapshot content (`snapshots:read`), and delete entries (`snapshots:delete`). A snapshot preview includes timestamp, word count, and a text excerpt so the history panel can render fast without reading entire files upfront. Chapter metadata tracks `updatedAt` so the project dashboard and timeline stay in sync, and `saveChapter` no-ops when the content hasn’t changed to avoid duplicate history entries.
-- IPC endpoints (`electron/main.ts`): `projects:list`, `projects:create`, `projects:rename`, `projects:updateDescription`, `projects:delete`, `projects:reorder`, `chapters:create`, `chapters:save`, `chapters:autosave`.
-- Metadata refresh: `updatedAt` is bumped whenever chapters are added/saved, drafts autosave, or metadata (title/description) changes so recency-based sorts stay meaningful.
+- **Location**: Electron's `app.getPath('userData')/workspace/`. Each project receives its own folder with:
+  - `project.json`: Metadata including title, description, timestamps, stats, and hierarchical chapter structure
+  - `chapters/<chapterId>.md`: Canonical markdown files (only for `kind: 'chapter'` nodes)
+  - `autosave/<chapterId>.draft`: Temporary autosave cache
+  - `timeline/<chapterId>/<timestamp>.snapshot`: Snapshot history files
+- **Project ordering**: `workspace/projects.json` stores an array of project IDs representing the preferred order. New projects append by default; drag/drop reorder updates this file.
+- **Hierarchical structure**: Chapters are stored as nested objects with optional `children` arrays. The `projectStore` service maintains both:
+  - `structure`: Hierarchical tree (as stored in `project.json`)
+  - `chapters`: Flattened list (computed via `flattenChapterTree` for backward compatibility)
+- **Autosave**: 
+  - Renderer sends debounced updates via IPC (`chapters:autosave`)
+  - Main process writes to `autosave/<chapterId>.draft`
+  - On launch, `loadChapterWithAutosave` compares mtime of autosave vs canonical file; fresher autosave replaces the canonical draft automatically
+  - Autosave updates chapter `updatedAt` and `words` metadata
+- **Official saves** (via `chapters:save`):
+  - Compares incoming content with existing canonical file using normalized comparison (trailing whitespace stripped)
+  - If content unchanged, returns early without writing or creating snapshot (**smart save** behavior)
+  - If changed:
+    - Updates `chapters/<chapterId>.md` with new content
+    - Updates chapter metadata (words, updatedAt)
+    - Records snapshot: `timeline/<chapterId>/<timestamp>.snapshot`
+    - Clears corresponding autosave file
+    - Updates project-level stats and timestamps
+  - Snapshot retention: Maximum 20 files per chapter (oldest deleted when limit exceeded)
+- **Timeline API**: 
+  - `snapshots:list`: Returns array of snapshot metadata (timestamp, words, preview excerpt)
+  - `snapshots:read`: Fetches full content of specific snapshot
+  - `snapshots:delete`: Removes snapshot file
+- **IPC endpoints** (`electron/main.ts`):
+  - Projects: `projects:list`, `projects:create`, `projects:rename`, `projects:updateDescription`, `projects:delete`, `projects:reorder`
+  - Chapters: `chapters:create`, `chapters:save`, `chapters:autosave`, `chapters:delete`, `chapters:reorder`, `chapters:move`
+  - Snapshots: `snapshots:list`, `snapshots:read`, `snapshots:delete`
+- **Metadata refresh**: 
+  - `updatedAt` is bumped whenever chapters are added/saved, drafts autosave, or metadata (title/description) changes so recency-based sorts stay meaningful
+  - `refreshProjectAggregates`: Recursively sums word counts from leaf chapters up through groups to project level
+  - `refreshAggregateWords`: Updates parent group word counts after child changes
+- **Utility functions** in `projectStore.ts`:
+  - `flattenChapterTree`: Converts hierarchical structure to flat array
+  - `findChapterMeta`: Recursively searches tree for chapter by ID
+  - `insertChapterMeta`: Inserts new node at specified parent
+  - `removeChapterMeta`: Removes node and returns it (for move operations)
+  - `reorderChapterChildren`: Reorders siblings under specific parent
+  - `collectChapterIds`: Recursively collects all leaf chapter IDs (for bulk deletion)
+  - `sumLeafWords`: Recursively sums word counts from all leaf chapters
 
-Keep this document updated as new feature slices are added or responsibilities shift. It pairs with the root `README.md` for a complete view of the project.***
+## App Shell & Layout
+
+- **`src/app/App.tsx`**: Central state management and layout orchestration
+  - Manages global state: projects list, active project/chapter IDs, theme, draft text, autosave status, timeline state, sidebar dimensions
+  - **Sidebar resizing logic**: 
+    - Mouse down on resizer starts resize mode
+    - Mouse move updates width with min/max constraints
+    - Mouse up ends resize
+    - Auto-collapse when width drops below SIDEBAR_COLLAPSE_WIDTH
+    - CSS custom property `--sidebar-width` controls actual width
+  - **Chapter selection flow**: Validates active IDs against loaded projects, handles fallbacks when chapters/projects are deleted
+  - **Autosave debouncing**: Uses ref-based timeout to debounce IPC calls
+  - **State synchronization**: After save/autosave, patches local project state with returned data from backend to keep UI in sync
+- **Theme persistence**: Theme preference stored in `localStorage` as `gg-theme`, falls back to system preference via `matchMedia`
+
+## Known Issues & Future Enhancements
+
+- **Focus mode**: Button exists but not yet implemented
+- **Notes panel**: Basic structure exists but CRUD operations not yet wired up
+- **Character cards**: Mentioned in stats but not yet implemented
+- **Variant system**: `variant` field exists on chapters but no UI for setting/displaying yet
+- **Search within chapters**: No full-text search yet
+- **Export/import**: No data export/import functionality yet
+- **Collaborative editing**: Single-user only, no real-time collaboration
+
+## Development Notes
+
+- **TypeScript**: Strict mode enabled; CSS custom properties should be typed with `as CSSProperties` pattern
+- **Icon library**: Uses `react-icons` (Material Design icons)
+- **Styling approach**: SCSS with token-based design system, component-specific styles co-located
+- **Build tooling**: Vite for renderer, electron-builder for packaging
+- **Testing**: No test framework configured yet
+
+Keep this document updated as new feature slices are added or responsibilities shift. It pairs with the root `README.md` for a complete view of the project.

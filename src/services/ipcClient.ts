@@ -1,11 +1,15 @@
-import type { Project, ChapterSnapshot } from '../shared/types'
+import type { Project, ChapterSnapshot, StoryNodeKind } from '../shared/types'
 
 export const projectBridge = {
   listProjects: () => window.ipcRenderer.invoke('projects:list') as Promise<Project[]>,
   createProject: (title: string, description?: string) =>
     window.ipcRenderer.invoke('projects:create', { title, description }) as Promise<Project>,
-  createChapter: (projectId: string, title: string) =>
-    window.ipcRenderer.invoke('chapters:create', { projectId, title }) as Promise<Project | null>,
+  createChapter: (
+    projectId: string,
+    title: string,
+    options?: { parentId?: string; kind?: StoryNodeKind; variant?: string }
+  ) =>
+    window.ipcRenderer.invoke('chapters:create', { projectId, title, ...options }) as Promise<Project | null>,
   saveChapter: (projectId: string, chapterId: string, content: string) =>
     window.ipcRenderer.invoke('chapters:save', { projectId, chapterId, content }) as Promise<Project | null>,
   autosaveChapter: (projectId: string, chapterId: string, content: string) =>
@@ -14,8 +18,10 @@ export const projectBridge = {
     }>,
   deleteChapter: (projectId: string, chapterId: string) =>
     window.ipcRenderer.invoke('chapters:delete', { projectId, chapterId }) as Promise<Project | null>,
-  reorderChapters: (projectId: string, order: string[]) =>
-    window.ipcRenderer.invoke('chapters:reorder', { projectId, order }) as Promise<Project | null>,
+  moveChapter: (projectId: string, chapterId: string, targetParentId: string | null) =>
+    window.ipcRenderer.invoke('chapters:move', { projectId, chapterId, targetParentId }) as Promise<Project | null>,
+  reorderChapters: (projectId: string, parentId: string | null, order: string[]) =>
+    window.ipcRenderer.invoke('chapters:reorder', { projectId, parentId, order }) as Promise<Project | null>,
   renameProject: (projectId: string, title: string) =>
     window.ipcRenderer.invoke('projects:rename', { projectId, title }) as Promise<Project | null>,
   updateProjectDescription: (projectId: string, description: string) =>

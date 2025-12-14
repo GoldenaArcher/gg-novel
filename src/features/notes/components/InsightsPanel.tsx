@@ -1,12 +1,35 @@
 import { Note, Project } from '../../../shared/types'
 
 interface InsightsPanelProps {
+  project?: Project
   notes?: Note[]
   progress?: Project['progress']
 }
 
-export const InsightsPanel = ({ notes = [], progress }: InsightsPanelProps) => (
+export const InsightsPanel = ({ project, notes = [], progress }: InsightsPanelProps) => (
   <section className="panel details-panel">
+    {project && (
+      <article className="project-card">
+        <div>
+          <p className="muted">当前项目</p>
+          <h2>{project.title}</h2>
+        </div>
+        <p className={`project-card__description${project.description ? '' : ' empty'}`}>
+          {project.description?.trim() || '暂无简介，使用项目管理为作品添加描述。'}
+        </p>
+        <div className="project-meta">
+          <div>
+            <p className="muted">总字数</p>
+            <strong>{project.stats.words.toLocaleString()}</strong>
+          </div>
+          <div>
+            <p className="muted">角色卡</p>
+            <strong>{project.stats.characters.toLocaleString()}</strong>
+          </div>
+        </div>
+      </article>
+    )}
+
     <div className="section-header">
       <p>灵感与任务</p>
       <button className="mini ghost">全部</button>

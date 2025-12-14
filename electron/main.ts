@@ -8,6 +8,7 @@ import {
   deleteChapter,
   deleteProject,
   listProjects,
+  moveChapter,
   readSnapshot,
   renameProject,
   reorderChapters,
@@ -17,6 +18,7 @@ import {
   listSnapshots,
   deleteSnapshot
 } from './services/projectStore'
+import type { StoryNodeKind } from '../src/shared/types'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -53,8 +55,15 @@ const registerIpcHandlers = () => {
 
   ipcMain.handle(
     'chapters:create',
-    async (_event, payload: { projectId: string; title: string }) => {
-      const project = await createChapter(payload.projectId, payload.title)
+    async (
+      _event,
+      payload: { projectId: string; title: string; parentId?: string; kind?: StoryNodeKind; variant?: string }
+    ) => {
+      const project = await createChapter(payload.projectId, payload.title, {
+        parentId: payload.parentId,
+        kind: payload.kind,
+        variant: payload.variant
+      })
       return project
     }
   )
@@ -84,8 +93,15 @@ const registerIpcHandlers = () => {
 
   ipcMain.handle(
     'chapters:reorder',
-    async (_event, payload: { projectId: string; order: string[] }) => {
-      return reorderChapters(payload.projectId, payload.order)
+    async (_event, payload: { projectId: string; parentId: string | null; order: string[] }) => {
+      return reorderChapters(payload.projectId, payload.parentId, payload.order)
+    }
+  )
+
+  ipcMain.handle(
+    'chapters:move',
+    async (_event, payload: { projectId: string; chapterId: string; targetParentId: string | null }) => {
+      return moveChapter(payload.projectId, payload.chapterId, payload.targetParentId)
     }
   )
 
