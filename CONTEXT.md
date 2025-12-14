@@ -7,14 +7,19 @@ This document describes the higher-level goals, responsibilities, and current im
 - `electron/`: Main-process source. `main.ts` boots the window and loads either the dev server or built renderer; `preload.ts` exposes safe bridges to the renderer.
 - `public/`: Static assets copied as-is into the renderer build (icons, splash graphics, etc.).
 - `src/app/`: Top-level React application wiring (global state, theming, layout composition, sidebar resizing).
+- `src/stores/`: Zustand state management stores (introduced in refactoring).
+  - `src/stores/projectStore.ts`: Core project and chapter state management with actions and selectors.
+  - `src/stores/editorStore.ts`: Editor state management including draft content, autosave status, and timeline features.
 - `src/features/`: Feature-specific UI slices.
   - `src/features/editor/`: Editor panel modules (composition, drafting textarea, writing actions, timeline viewer).
   - `src/features/library/`: Library sidebar modules (project and chapter navigation with hierarchical tree structure, project manager dashboard).
   - `src/features/notes/`: Notes & Insights modules (inspiration cards, progress tracking).
 - `src/data/`: Future data adapters (API clients, migrations, import/export helpers). Currently unused because persistence lives in the Electron main process.
 - `src/shared/`: Cross-cutting types and utilities (e.g., `types.ts` for Chapter, Project, ThemeMode, StoryNodeKind definitions) that multiple features consume.
-- `src/shared/components/ModalPortal.tsx`: React portal wrapper used by every modal (project manager, timeline, future dialogs). Handles scroll locking by toggling `body.modal-open`.
-- `src/styles/`: Global Sass setup. `_tokens.scss` defines theme variables, `_mixins.scss` contains reusable style patterns, `base.scss` resets the page + theme variables, and `app.scss` styles the shell components including CSS custom properties for dynamic sizing.
+- `src/shared/components/`: Reusable UI components.
+  - `ModalPortal.tsx`: React portal wrapper used by every modal (project manager, timeline, future dialogs). Handles scroll locking by toggling `body.modal-open`.
+  - `ErrorBoundary.tsx`: React error boundary for graceful error handling with user-friendly UI and recovery options.
+- `src/styles/`: Global Sass setup. `_tokens.scss` defines theme variables, `_mixins.scss` contains reusable style patterns, `base.scss` resets the page + theme variables, `app.scss` styles the shell components including CSS custom properties for dynamic sizing, and `error-boundary.scss` styles the error UI.
 - `dist/`, `dist-electron/`, `release/`: Generated output after running `npm run build` (renderer bundle, Electron bundle, and packaged apps). These folders are created during builds and can be cleaned if necessary.
 - `electron/services/`: Main-process utilities. `projectStore.ts` is the filesystem-backed persistence layer (projects, chapters, autosave cache, snapshot timeline, hierarchical structure management).
 
@@ -46,9 +51,9 @@ This document describes the higher-level goals, responsibilities, and current im
 - **Key behaviors**:
   - **Project switcher**: Pill buttons at the top to jump between novel projects; displays stats (word count, character cards) for quick context.
   - **Hierarchical chapter tree**: Supports nested structure with groups and chapters. Chapters can be organized into groups (folders) and nested arbitrarily deep:
-    - **Groups** (`kind: 'group'`): Collapsible folders that contain other groups or chapters. Display aggregate word counts from all descendant chapters. Can have optional `variant` field for sub-categorization (e.g., "arc", "volume", "part").
+    - **Groups** (`kind: 'group'`): Collapsible folders that contain other groups or chapters. Display aggregate word counts from all descendant chapters. Can have optional `variant` field for sub-categorization (e.g., "arc", "volume", "part"). **Can be selected and edited** - groups have their own draft content just like chapters.
     - **Chapters** (`kind: 'chapter'`): Leaf nodes containing actual content. Show status badges (outline/draft/final) and word counts.
-  - **Tree navigation**: Click to expand/collapse groups, select chapters for editing. Visual indentation shows nesting depth (via CSS depth multiplier).
+  - **Tree navigation**: Click to select any node (groups or chapters) for editing. Groups also toggle expand/collapse on click. Visual indentation shows nesting depth (via CSS depth multiplier). Selected nodes show blue highlight border and light purple background.
   - **CRUD operations**: 
     - Create new chapters or groups at any level (root or nested under a parent) via "+" buttons
     - Delete nodes (removes all descendants if it's a group, including all nested content files)
@@ -73,7 +78,7 @@ This document describes the higher-level goals, responsibilities, and current im
     - Collapsible to ~0px to save screen space (SIDEBAR_COLLAPSE_WIDTH: 160px threshold)
     - Uses CSS custom properties (`--sidebar-width`) for dynamic sizing
     - Drag handle on right edge with visual feedback during resize
-- **Data flow**: Receives canonical projects array + active IDs from `App`. All mutations (create, delete, move, reorder) call back to `App`, which forwards to main process via IPC. The hierarchical structure is persisted as nested `children` arrays in the project metadata. Both `structure` (hierarchical tree) and `chapters` (flat list) are maintained for different use cases.
+- **Data flow**: Consumes project state from `projectStore` (Zustand). All mutations (create, delete, move, reorder) call back to `App`, which uses projectStore actions to update state and forwards to main process via IPC. The hierarchical structure is persisted as nested `children` arrays in the project metadata. Both `structure` (hierarchical tree) and `chapters` (flat list) are maintained for different use cases.
 
 ### Notes & Insights
 
@@ -93,9 +98,17 @@ This document describes the higher-level goals, responsibilities, and current im
   - `ChapterSnapshot`: Contains `timestamp`, `words`, `preview` (truncated text excerpt).
   - `StoryNodeKind`: Type alias for `'group' | 'chapter'` to distinguish between containers and content.
   - `ThemeMode`: Type alias for `'dark' | 'light'`.
+- **`src/stores/projectStore.ts`**: Zustand store for project and chapter state management:
+  - **State**: `projects`, `activeProjectId`, `activeChapterId`, `allowChapterless`
+  - **Actions**: `setProjects`, `setActiveProject`, `setActiveChapter`, `setAllowChapterless`, `syncProject`, `loadProjects`, `getActiveProject`, `getActiveChapter`, `updateChapterInProject`
+  - **Selectors**: `selectActiveProject`, `selectActiveChapter`
+  - **Utilities**: `getProjectsWithLiveDraft` (pure function for computing projects with real-time draft updates), `patchStructureNode`, `patchStructureById` (exported for tree manipulation)
+- **`src/stores/editorStore.ts`**: Zustand store for editor state management:
+  - **State**: `draftText`, `isAutosaving`, `lastAutosaveAt`, `nowTick`, `isTimelineOpen`, `timelineEntries`, `timelineLoading`, `selectedSnapshot`, `snapshotPreview`, `snapshotPreviewLoading`, `deletingSnapshot`
+  - **Actions**: `setDraftText`, `setAutosaving`, `setLastAutosaveAt`, `setNowTick`, `openTimeline`, `closeTimeline`, `setTimelineEntries`, `setTimelineLoading`, `setSelectedSnapshot`, `setSnapshotPreview`, `setSnapshotPreviewLoading`, `setDeletingSnapshot`
+- **`src/shared/components/ErrorBoundary.tsx`**: React error boundary component that catches component errors and displays user-friendly error UI with recovery options ("Try Again" and "Reload Page"). Integrated at app root level.
 - **`src/data/`**: Reserved for data migrations/importers if we need to move beyond the built-in filesystem store.
 - **`src/styles/`**: Token-driven styling system; components are expected to lean on the CSS variables to stay in sync across themes. Global base styles also manage modal scroll locking so the root layout stays fixed while dialogs scroll internally.
-- **State management**: `App.tsx` uses `patchStructureNode` and `patchStructureById` utility functions to immutably update nested chapter structures when individual chapters change (e.g., after autosave).
 
 ## Storage & Persistence
 
@@ -147,7 +160,17 @@ This document describes the higher-level goals, responsibilities, and current im
 ## App Shell & Layout
 
 - **`src/app/App.tsx`**: Central state management and layout orchestration
-  - Manages global state: projects list, active project/chapter IDs, theme, draft text, autosave status, timeline state, sidebar dimensions
+  - **State management architecture** (Refactoring complete: Stage 1 & 2):
+    - **Zustand stores** (migrated):
+      - Project state: Managed by `projectStore` (projects list, active project/chapter IDs, allowChapterless flag)
+      - Editor state: Managed by `editorStore` (draft text, autosave status, timeline state)
+    - **Local state** (remaining in App.tsx):
+      - Theme state (1 useState) - Simple UI toggle
+      - Manager state (1 useState) - Dialog open/close
+      - Sidebar state (4 useState + 1 ref) - Complex DOM interactions: width, collapsed, resizing, overlay
+      - Responsive layout (1 custom hook with internal useState) - Media query listener
+  - **Live draft computation**: Uses `useMemo` with `getProjectsWithLiveDraft` to compute projects with real-time draft updates without causing infinite re-renders
+  - **Editor state integration**: Uses `useEditorStore` with `useShallow` for optimized subscriptions to editor state (draft, autosave, timeline)
   - **Sidebar resizing logic**: 
     - Mouse down on resizer starts resize mode
     - Mouse move updates width with min/max constraints
@@ -158,6 +181,7 @@ This document describes the higher-level goals, responsibilities, and current im
   - **Autosave debouncing**: Uses ref-based timeout to debounce IPC calls
   - **State synchronization**: After save/autosave, patches local project state with returned data from backend to keep UI in sync
 - **Theme persistence**: Theme preference stored in `localStorage` as `gg-theme`, falls back to system preference via `matchMedia`
+- **Error handling**: Entire app wrapped in ErrorBoundary component for graceful error recovery
 
 ## Known Issues & Future Enhancements
 
@@ -176,5 +200,24 @@ This document describes the higher-level goals, responsibilities, and current im
 - **Styling approach**: SCSS with token-based design system, component-specific styles co-located
 - **Build tooling**: Vite for renderer, electron-builder for packaging
 - **Testing**: No test framework configured yet
+- **State management**: Zustand-based architecture (All stages complete)
+  - `projectStore`: Project and chapter management
+  - `editorStore`: Draft, autosave, and timeline features
+  - `uiStore`: Theme and UI layout state
+  - Custom hooks: Feature-specific business logic
+  - App.tsx: Layout coordination only
+- **Performance patterns**: 
+  - Use `useMemo` for expensive computations (e.g., `getProjectsWithLiveDraft`)
+  - Use `useShallow` from zustand/shallow for optimized multi-property subscriptions
+  - Avoid creating new object references in Zustand selectors
+  - Export pure utility functions from stores for component use
+  - Custom hooks encapsulate complex logic with useCallback
+- **Code organization**:
+  - State management → Zustand stores (`src/stores/`)
+  - Business logic → Custom hooks (`src/features/*/hooks/`)
+  - UI components → Feature components (`src/features/*/components/`)
+  - Layout coordination → App.tsx
+  - UI/Layout logic → Components
+  - Shared utilities → Exported pure functions
 
 Keep this document updated as new feature slices are added or responsibilities shift. It pairs with the root `README.md` for a complete view of the project.

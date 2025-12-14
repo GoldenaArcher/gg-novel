@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ChapterSnapshot } from '../../../shared/types'
+import { AppLanguage } from '../../../stores/uiStore'
+import { t, formatWordLabel, formatEmptyContent } from '../../../shared/i18n'
 
 interface TimelinePanelProps {
   entries: ChapterSnapshot[]
@@ -12,6 +14,7 @@ interface TimelinePanelProps {
   onDelete: (timestamp: number) => Promise<void> | void
   deletingTimestamp?: number | null
   onClose: () => void
+  language: AppLanguage
 }
 
 const formatTimestamp = (timestamp: number) => {
@@ -29,7 +32,8 @@ export const TimelinePanel = ({
   onRestore,
   onDelete,
   deletingTimestamp,
-  onClose
+  onClose,
+  language
 }: TimelinePanelProps) => {
   const [pendingDelete, setPendingDelete] = useState<number | null>(null)
   const activeEntry = useMemo(() => entries.find((entry) => entry.timestamp === pendingDelete), [entries, pendingDelete])
@@ -62,15 +66,15 @@ export const TimelinePanel = ({
     <section className="timeline-panel">
       <header>
         <div>
-          <p className="muted small">历史版本</p>
-          <h3>Timeline</h3>
+          <p className="muted small">{t(language, 'timelineSubtitle')}</p>
+          <h3>{t(language, 'timelineTitle')}</h3>
         </div>
         <div className="timeline-actions">
           <button className="mini ghost" type="button" onClick={onClose}>
-            关闭
+            {t(language, 'actionClose')}
           </button>
           <button className="mini primary" type="button" onClick={onRestore} disabled={!preview}>
-            恢复到编辑器
+            {t(language, 'actionRestoreEditor')}
           </button>
           <button
             className="mini ghost danger"
@@ -78,16 +82,16 @@ export const TimelinePanel = ({
             disabled={!selectedTimestamp || Boolean(deletingTimestamp)}
             onClick={requestDelete}
           >
-            删除版本
+            {t(language, 'actionDeleteVersion')}
           </button>
         </div>
       </header>
       <div className="timeline-body">
         <div className="timeline-list">
           {loading ? (
-            <p className="muted">加载历史版本中...</p>
+            <p className="muted">{t(language, 'timelineLoading')}</p>
           ) : entries.length === 0 ? (
-            <p className="muted">暂无历史版本，保存章节后将自动生成快照。</p>
+            <p className="muted">{t(language, 'timelineEmpty')}</p>
           ) : (
             entries.map((entry) => (
               <button
@@ -97,20 +101,20 @@ export const TimelinePanel = ({
               >
                 <div>
                   <p className="timeline-entry__time">{formatTimestamp(entry.timestamp)}</p>
-                  <p className="muted small">{entry.words.toLocaleString()} 字</p>
+                  <p className="muted small">{formatWordLabel(language, entry.words)}</p>
                 </div>
-                <p className="timeline-entry__preview">{entry.preview || '（空内容）'}</p>
+                <p className="timeline-entry__preview">{entry.preview || formatEmptyContent(language)}</p>
               </button>
             ))
           )}
         </div>
         <div className="timeline-preview">
           {previewLoading ? (
-            <p className="muted">读取版本中...</p>
+            <p className="muted">{t(language, 'timelinePreviewLoading')}</p>
           ) : preview ? (
             <pre>{preview}</pre>
           ) : (
-            <p className="muted">选择左侧版本查看内容，或恢复至编辑器。</p>
+            <p className="muted">{t(language, 'timelinePreviewPlaceholder')}</p>
           )}
         </div>
       </div>
@@ -118,16 +122,16 @@ export const TimelinePanel = ({
         <div className="timeline-confirm">
           <div className="timeline-confirm__card">
             <div>
-              <p className="muted small">确认删除</p>
+              <p className="muted small">{t(language, 'timelineConfirmDelete')}</p>
               <h4>{formatTimestamp(pendingDelete)}</h4>
               <p className="muted small">
-                {activeEntry?.words?.toLocaleString() ?? 0} 字 · {activeEntry?.preview || '（空内容）'}
+                {formatWordLabel(language, activeEntry?.words ?? 0)} · {activeEntry?.preview || formatEmptyContent(language)}
               </p>
-              <p className="timeline-confirm__note">此操作不可撤销，将彻底移除该历史版本。</p>
+              <p className="timeline-confirm__note">{t(language, 'timelineConfirmDeleteNote')}</p>
             </div>
             <div className="timeline-confirm__actions">
               <button className="ghost" type="button" onClick={cancelDelete} disabled={isDeleting}>
-                取消
+                {t(language, 'actionCancel')}
               </button>
               <button
                 className="danger"
@@ -135,7 +139,7 @@ export const TimelinePanel = ({
                 onClick={confirmDelete}
                 disabled={isDeleting}
               >
-                {isDeleting ? '删除中...' : '删除版本'}
+                {isDeleting ? t(language, 'timelineDeleting') : t(language, 'actionDeleteVersion')}
               </button>
             </div>
           </div>
