@@ -5,14 +5,17 @@ import {
   autosaveChapter,
   createChapter,
   createProject,
+  deleteChapter,
   deleteProject,
   listProjects,
   readSnapshot,
   renameProject,
+  reorderChapters,
   reorderProjects,
   saveChapter,
   updateProjectDescription,
-  listSnapshots
+  listSnapshots,
+  deleteSnapshot
 } from './services/projectStore'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -71,6 +74,21 @@ const registerIpcHandlers = () => {
     }
   )
 
+  ipcMain.handle(
+    'chapters:delete',
+    async (_event, payload: { projectId: string; chapterId: string }) => {
+      const project = await deleteChapter(payload.projectId, payload.chapterId)
+      return project
+    }
+  )
+
+  ipcMain.handle(
+    'chapters:reorder',
+    async (_event, payload: { projectId: string; order: string[] }) => {
+      return reorderChapters(payload.projectId, payload.order)
+    }
+  )
+
   ipcMain.handle('projects:rename', async (_event, payload: { projectId: string; title: string }) => {
     return renameProject(payload.projectId, payload.title)
   })
@@ -102,6 +120,14 @@ const registerIpcHandlers = () => {
     'snapshots:read',
     async (_event, payload: { projectId: string; chapterId: string; timestamp: number }) => {
       return readSnapshot(payload.projectId, payload.chapterId, payload.timestamp)
+    }
+  )
+
+  ipcMain.handle(
+    'snapshots:delete',
+    async (_event, payload: { projectId: string; chapterId: string; timestamp: number }) => {
+      await deleteSnapshot(payload.projectId, payload.chapterId, payload.timestamp)
+      return true
     }
   )
 }

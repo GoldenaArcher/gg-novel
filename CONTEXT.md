@@ -28,7 +28,7 @@ This document describes the higher-level goals, responsibilities, and current im
   - Displays project title, chapter title, and metadata (pace, mood, summary).
   - Owns the main text area. The value is controlled by `App` state so future persistence (autosave, versioning) can plug in easily.
   - Exposes actions: theme toggle, history/timeline, focus mode, and footer actions (`TODO` flag, fragment export).
-  - Timeline panel mimics VS Code’s history view: clicking “历史版本” fetches snapshot summaries, shows previews, and lets the user restore a snapshot back into the editor buffer.
+  - Timeline panel mimics VS Code’s history view: clicking “历史版本” fetches snapshot summaries, shows previews, supports deleting snapshots, and lets the user restore a snapshot back into the editor buffer.
 - **Styling notes**: Pulls shared style tokens via `app.scss`; textarea uses the mono font stack defined in `base.scss`.
 
 ### Library
@@ -64,7 +64,7 @@ This document describes the higher-level goals, responsibilities, and current im
 - Ordering: `workspace/projects.json` stores an array of project IDs representing the preferred order. New projects append by default; drag/drop reorder updates this file.
 - Autosave: Renderer sends debounced updates via IPC; the main process writes to `autosave/<chapterId>.draft`. On launch the fresher autosave replaces the canonical draft automatically.
 - Official saves: `chapters/<chapterId>.md` stores the canonical text, metadata updates word counts, and a snapshot (`timeline/<chapterId>/<timestamp>.snapshot`) is recorded with a rolling retention limit (20 files). Autosave files are cleared after successful saves.
-- Timeline API: Renderer can list snapshot metadata (`snapshots:list`) and load specific snapshot content (`snapshots:read`). A snapshot preview includes timestamp, word count, and a text excerpt so the history panel can render fast without reading entire files upfront. Chapter metadata tracks `updatedAt` so the project dashboard and timeline stay in sync.
+- Timeline API: Renderer can list snapshot metadata (`snapshots:list`), load specific snapshot content (`snapshots:read`), and delete entries (`snapshots:delete`). A snapshot preview includes timestamp, word count, and a text excerpt so the history panel can render fast without reading entire files upfront. Chapter metadata tracks `updatedAt` so the project dashboard and timeline stay in sync, and `saveChapter` no-ops when the content hasn’t changed to avoid duplicate history entries.
 - IPC endpoints (`electron/main.ts`): `projects:list`, `projects:create`, `projects:rename`, `projects:updateDescription`, `projects:delete`, `projects:reorder`, `chapters:create`, `chapters:save`, `chapters:autosave`.
 - Metadata refresh: `updatedAt` is bumped whenever chapters are added/saved, drafts autosave, or metadata (title/description) changes so recency-based sorts stay meaningful.
 

@@ -16,6 +16,8 @@ interface EditorPanelProps {
   selectedSnapshot?: number
   snapshotPreview?: string
   snapshotPreviewLoading: boolean
+  onDeleteSnapshot: (timestamp: number) => Promise<void> | void
+  deletingSnapshot?: number | null
   onOpenTimeline: () => void
   onCloseTimeline: () => void
   onSelectSnapshot: (timestamp: number) => void
@@ -40,6 +42,8 @@ export const EditorPanel = ({
   selectedSnapshot,
   snapshotPreview,
   snapshotPreviewLoading,
+  onDeleteSnapshot,
+  deletingSnapshot,
   onOpenTimeline,
   onCloseTimeline,
   onSelectSnapshot,
@@ -65,8 +69,9 @@ export const EditorPanel = ({
 
   const autosaveLabel = () => {
     if (!chapter) return '自动保存 · 选择章节后开始'
-    if (isAutosaving) return '自动保存中...'
-    return `自动保存 · ${formatRelativeTime(autosaveTimestamp)}`
+    const wordsLabel = `${chapter.words.toLocaleString()} 字`
+    if (isAutosaving) return `${wordsLabel} · 自动保存中...`
+    return `${wordsLabel} · 自动保存 · ${formatRelativeTime(autosaveTimestamp)}`
   }
 
   return (
@@ -95,7 +100,6 @@ export const EditorPanel = ({
         <div className="modal-overlay">
           <div className="modal-content timeline-modal">
             <TimelinePanel
-              open={isTimelineOpen}
               entries={timelineEntries}
               loading={timelineLoading}
               selectedTimestamp={selectedSnapshot}
@@ -103,6 +107,8 @@ export const EditorPanel = ({
               previewLoading={snapshotPreviewLoading}
               onSelect={onSelectSnapshot}
               onRestore={onRestoreSnapshot}
+              onDelete={onDeleteSnapshot}
+              deletingTimestamp={deletingSnapshot}
               onClose={onCloseTimeline}
             />
           </div>

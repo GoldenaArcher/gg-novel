@@ -323,6 +323,13 @@ export const saveChapter = async (projectId: string, chapterId: string, content:
   const chapterMeta = meta.chapters.find((chapter) => chapter.id === chapterId)
   if (!chapterMeta) return null
 
+  const canonicalPath = getChapterFilePath(projectId, chapterId)
+  const existing = await readFileIfExists(canonicalPath)
+  const normalize = (value?: string | null) => (value ?? '').replace(/\s+$/g, '')
+  if (normalize(existing) === normalize(content)) {
+    return readProject(projectId)
+  }
+
   chapterMeta.words = [...content].length
   chapterMeta.updatedAt = Date.now()
   updateProjectStats(meta)
@@ -336,6 +343,46 @@ export const saveChapter = async (projectId: string, chapterId: string, content:
 
   const project = await readProject(projectId)
   return project
+}
+
+export const deleteChapter = async (projectId: string, chapterId: string): Promise<Project | null> => {
+  const meta = await loadProjectMeta(projectId)
+  if (!meta) return null
+  const index = meta.chapters.findIndex((chapter) => chapter.id === chapterId)
+  if (index === -1) return null
+  meta.chapters.splice(index, 1)
+  updateProjectStats(meta)
+  touchProject(meta)
+  await writeProjectMeta(projectId, meta)
+  await removeFileIfExists(getChapterFilePath(projectId, chapterId))
+  await removeFileIfExists(getAutosavePath(projectId, chapterId))
+  try {
+    await fs.rm(getSnapshotDir(projectId, chapterId), { recursive: true, force: true })
+  } catch {
+    // ignore
+  }
+  return readProject(projectId)
+}
+
+export const reorderChapters = async (projectId: string, order: string[]): Promise<Project | null> => {
+  const meta = await loadProjectMeta(projectId)
+  if (!meta) return null
+  const map = new Map(meta.chapters.map((chapter) => [chapter.id, chapter] as const))
+  const next: ChapterMeta[] = []
+  for (const id of order) {
+    const match = map.get(id)
+    if (match) {
+      next.push(match)
+      map.delete(id)
+    }
+  }
+  for (const leftover of map.values()) {
+    next.push(leftover)
+  }
+  meta.chapters = next
+  touchProject(meta)
+  await writeProjectMeta(projectId, meta)
+  return readProject(projectId)
 }
 
 export const reorderProjects = async (nextOrder: string[]): Promise<Project[]> => {
@@ -401,4 +448,9 @@ export const readSnapshot = async (projectId: string, chapterId: string, timesta
   } catch {
     return null
   }
+}
+
+export const deleteSnapshot = async (projectId: string, chapterId: string, timestamp: number) => {
+  const target = getSnapshotPath(projectId, chapterId, timestamp)
+  await fs.rm(target, { force: true })
 }

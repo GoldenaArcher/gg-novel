@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { MdDelete } from 'react-icons/md'
 import { Project } from '../../../shared/types'
 
 interface LibrarySidebarProps {
@@ -11,6 +12,9 @@ interface LibrarySidebarProps {
   onCreateChapter: (title?: string) => void | Promise<void>
   onOpenProjectManager: () => void
   onReorderProjects: (order: string[]) => void
+  onDeleteProject: (projectId: string) => void | Promise<void>
+  onDeleteChapter: (projectId: string, chapterId: string) => void | Promise<void>
+  onReorderChapters: (projectId: string, order: string[]) => void | Promise<void>
 }
 
 const statusLabel: Record<Project['chapters'][number]['status'], string> = {
@@ -28,7 +32,10 @@ export const LibrarySidebar = ({
   onCreateProject,
   onCreateChapter,
   onOpenProjectManager,
-  onReorderProjects
+  onReorderProjects,
+  onDeleteProject,
+  onDeleteChapter,
+  onReorderChapters
 }: LibrarySidebarProps) => {
   const activeProject = projects.find((project) => project.id === activeProjectId)
   const [creatingProject, setCreatingProject] = useState(false)
@@ -39,6 +46,8 @@ export const LibrarySidebar = ({
   const [creatingChapter, setCreatingChapter] = useState(false)
   const [newChapterTitle, setNewChapterTitle] = useState('')
   const newChapterInputRef = useRef<HTMLInputElement>(null)
+  const [draggingChapterId, setDraggingChapterId] = useState<string | null>(null)
+  const chapterListRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (creatingProject) {
@@ -131,6 +140,63 @@ export const LibrarySidebar = ({
     return { targetId: items[items.length - 1].dataset.projectId ?? null, position: 'after' as const }
   }
 
+  const resolveChapterDropTarget = (clientY: number) => {
+    const container = chapterListRef.current
+    if (!container) return { targetId: null, position: 'after' as const }
+    const items = Array.from(container.querySelectorAll<HTMLDivElement>('[data-chapter-id]'))
+    if (items.length === 0) return { targetId: null, position: 'after' as const }
+    for (const item of items) {
+      const rect = item.getBoundingClientRect()
+      if (clientY < rect.top + rect.height / 2) {
+        return { targetId: item.dataset.chapterId ?? null, position: 'before' as const }
+      }
+    }
+    return { targetId: items[items.length - 1].dataset.chapterId ?? null, position: 'after' as const }
+  }
+
+  const handleChapterReorder = async (targetId: string | null, position: 'before' | 'after') => {
+    if (!activeProject || !draggingChapterId || draggingChapterId === targetId) {
+      setDraggingChapterId(null)
+      return
+    }
+    const order = activeProject.chapters.map((chapter) => chapter.id)
+    const fromIndex = order.indexOf(draggingChapterId)
+    const targetIndex = targetId ? order.indexOf(targetId) : order.length
+    if (fromIndex === -1 || targetIndex === -1) {
+      setDraggingChapterId(null)
+      return
+    }
+    const next = [...order]
+    const [moved] = next.splice(fromIndex, 1)
+    const insertIndex = targetId
+      ? position === 'before'
+        ? fromIndex < targetIndex
+          ? targetIndex - 1
+          : targetIndex
+        : fromIndex < targetIndex
+        ? targetIndex
+        : targetIndex + 1
+      : next.length
+    next.splice(insertIndex, 0, moved)
+    await onReorderChapters(activeProject.id, next)
+    setDraggingChapterId(null)
+  }
+
+  const requestProjectDelete = async (projectId: string, title: string) => {
+    const confirmed = window.confirm(`确认删除作品「${title}」？该操作不可撤销。`)
+    if (confirmed) {
+      await onDeleteProject(projectId)
+    }
+  }
+
+  const requestChapterDelete = async (chapterId: string, title: string) => {
+    if (!activeProject) return
+    const confirmed = window.confirm(`确认删除章节「${title}」？删除后无法恢复。`)
+    if (confirmed) {
+      await onDeleteChapter(activeProject.id, chapterId)
+    }
+  }
+
   return (
     <aside className="panel sidebar">
       <div className="brand">
@@ -198,10 +264,11 @@ export const LibrarySidebar = ({
             </div>
           )}
           {projects.map((project) => (
-            <button
+            <div
               key={project.id}
-              className={`project-pill${project.id === activeProjectId ? ' active' : ''}`}
-              onClick={() => onProjectSelect(project.id)}
+              className={`project-pill${project.id === activeProjectId ? ' active' : ''}${
+                draggingProjectId === project.id ? ' dragging' : ''
+              }`}
               data-project-id={project.id}
               draggable
               onDragStart={(event) => {
@@ -221,9 +288,22 @@ export const LibrarySidebar = ({
               }}
               onDragEnd={() => setDraggingProjectId(null)}
             >
-              <p className="project-pill__title">{project.title}</p>
-              <span className="project-pill__meta">{project.stats.words.toLocaleString()} 字</span>
-            </button>
+              <button className="project-pill__main" type="button" onClick={() => onProjectSelect(project.id)}>
+                <p className="project-pill__title">{project.title}</p>
+                <span className="project-pill__meta">{project.stats.words.toLocaleString()} 字</span>
+              </button>
+              <button
+                className="pill-action danger"
+                type="button"
+                aria-label={`删除作品 ${project.title}`}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  requestProjectDelete(project.id, project.title)
+                }}
+              >
+                <MdDelete aria-hidden="true" />
+              </button>
+            </div>
           ))}
         </div>
 
@@ -254,17 +334,42 @@ export const LibrarySidebar = ({
                   <strong>{activeProject.stats.characters}</strong>
                 </div>
               </div>
-              <button className="ghost" type="button" disabled={creatingChapter} onClick={() => setCreatingChapter(true)}>
-                新建章节
-              </button>
             </div>
 
             <div className="chapter-section">
               <div className="section-header">
                 <p>章节</p>
-                <button className="mini ghost">筛选</button>
+                <div className="section-actions">
+                  <button className="mini ghost" type="button">
+                    筛选
+                  </button>
+                  <button className="mini ghost" type="button" onClick={() => setCreatingChapter(true)} disabled={creatingChapter}>
+                    新建章节
+                  </button>
+                </div>
               </div>
-              <div className="chapter-list">
+              <div
+                className="chapter-list"
+                ref={chapterListRef}
+                onDragOver={(event) => {
+                  event.preventDefault()
+                  const container = chapterListRef.current
+                  if (container) {
+                    const rect = container.getBoundingClientRect()
+                    const threshold = 48
+                    if (event.clientY - rect.top < threshold) {
+                      container.scrollTop -= 12
+                    } else if (rect.bottom - event.clientY < threshold) {
+                      container.scrollTop += 12
+                    }
+                  }
+                }}
+                onDrop={(event) => {
+                  event.preventDefault()
+                  const target = resolveChapterDropTarget(event.clientY)
+                  handleChapterReorder(target.targetId, target.position)
+                }}
+              >
                 {creatingChapter && (
                   <div className="chapter-item creating">
                     <input
@@ -293,17 +398,41 @@ export const LibrarySidebar = ({
                   </div>
                 )}
                 {activeProject.chapters.map((chapter) => (
-                  <button
+                  <div
                     key={chapter.id}
-                    className={`chapter-item${chapter.id === activeChapterId ? ' active' : ''}`}
-                    onClick={() => onChapterSelect(chapter.id)}
+                    className={`chapter-item${chapter.id === activeChapterId ? ' active' : ''}${
+                      draggingChapterId === chapter.id ? ' dragging' : ''
+                    }`}
+                    data-chapter-id={chapter.id}
+                    draggable
+                    onDragStart={(event) => {
+                      setDraggingChapterId(chapter.id)
+                      event.dataTransfer.effectAllowed = 'move'
+                    }}
+                    onDragEnd={() => setDraggingChapterId(null)}
                   >
-                    <div>
+                    <button
+                      type="button"
+                      className="chapter-item__main"
+                      onClick={() => onChapterSelect(chapter.id)}
+                    >
                       <p className="chapter-title">{chapter.title}</p>
-                      <p className="muted">{chapter.words.toLocaleString()} 字</p>
+                      <span className={`status-badge status-${chapter.status}`}>{statusLabel[chapter.status]}</span>
+                    </button>
+                    <div className="pill-actions">
+                      <button
+                        className="pill-action danger"
+                        type="button"
+                        aria-label={`删除章节 ${chapter.title}`}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          requestChapterDelete(chapter.id, chapter.title)
+                        }}
+                      >
+                        <MdDelete aria-hidden="true" />
+                      </button>
                     </div>
-                    <span className={`status-badge status-${chapter.status}`}>{statusLabel[chapter.status]}</span>
-                  </button>
+                  </div>
                 ))}
               </div>
             </div>

@@ -12,6 +12,10 @@ export const projectBridge = {
     window.ipcRenderer.invoke('chapters:autosave', { projectId, chapterId, content }) as Promise<{
       autosaveTimestamp: number
     }>,
+  deleteChapter: (projectId: string, chapterId: string) =>
+    window.ipcRenderer.invoke('chapters:delete', { projectId, chapterId }) as Promise<Project | null>,
+  reorderChapters: (projectId: string, order: string[]) =>
+    window.ipcRenderer.invoke('chapters:reorder', { projectId, order }) as Promise<Project | null>,
   renameProject: (projectId: string, title: string) =>
     window.ipcRenderer.invoke('projects:rename', { projectId, title }) as Promise<Project | null>,
   updateProjectDescription: (projectId: string, description: string) =>
@@ -22,5 +26,7 @@ export const projectBridge = {
   listSnapshots: (projectId: string, chapterId: string) =>
     window.ipcRenderer.invoke('snapshots:list', { projectId, chapterId }) as Promise<ChapterSnapshot[]>,
   readSnapshot: (projectId: string, chapterId: string, timestamp: number) =>
-    window.ipcRenderer.invoke('snapshots:read', { projectId, chapterId, timestamp }) as Promise<string | null>
+    window.ipcRenderer.invoke('snapshots:read', { projectId, chapterId, timestamp }) as Promise<string | null>,
+  deleteSnapshot: (projectId: string, chapterId: string, timestamp: number) =>
+    window.ipcRenderer.invoke('snapshots:delete', { projectId, chapterId, timestamp }) as Promise<boolean>
 }

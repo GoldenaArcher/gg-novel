@@ -47,6 +47,7 @@ function App() {
   const [selectedSnapshot, setSelectedSnapshot] = useState<number | null>(null)
   const [snapshotPreview, setSnapshotPreview] = useState<string | null>(null)
   const [snapshotPreviewLoading, setSnapshotPreviewLoading] = useState(false)
+  const [deletingSnapshot, setDeletingSnapshot] = useState<number | null>(null)
   const autosaveProjectId = activeProjectSource?.id
   const autosaveChapterId = activeChapterSource?.id
 
@@ -143,6 +144,7 @@ function App() {
     setSelectedSnapshot(null)
     setSnapshotPreview(null)
     setSnapshotPreviewLoading(false)
+    setDeletingSnapshot(null)
   }, [])
 
   useEffect(() => {
@@ -200,6 +202,29 @@ function App() {
     closeTimeline()
   }, [snapshotPreview, closeTimeline])
 
+  const handleDeleteSnapshot = useCallback(
+    async (timestamp: number) => {
+      if (!autosaveProjectId || !autosaveChapterId) return
+      setDeletingSnapshot(timestamp)
+      try {
+        await projectBridge.deleteSnapshot(autosaveProjectId, autosaveChapterId, timestamp)
+        const entries = await projectBridge.listSnapshots(autosaveProjectId, autosaveChapterId)
+        setTimelineEntries(entries)
+        if (entries.length > 0) {
+          await handleSelectSnapshot(entries[0].timestamp)
+        } else {
+          setSelectedSnapshot(null)
+          setSnapshotPreview(null)
+        }
+      } catch (error) {
+        console.error('Failed to delete snapshot', error)
+      } finally {
+        setDeletingSnapshot(null)
+      }
+    },
+    [autosaveProjectId, autosaveChapterId, handleSelectSnapshot]
+  )
+
   const activeProjectView = useMemo(
     () => projectsView.find((project) => project.id === activeProjectId),
     [projectsView, activeProjectId]
@@ -251,6 +276,29 @@ function App() {
       }
     }
   }, [activeProjectSource, syncProject])
+
+  const handleDeleteChapter = useCallback(
+    async (projectId: string, chapterId: string) => {
+      const updated = await projectBridge.deleteChapter(projectId, chapterId)
+      if (updated) {
+        syncProject(updated)
+        if (chapterId === activeChapterId) {
+          setActiveChapterId(updated.chapters[0]?.id ?? '')
+        }
+      }
+    },
+    [activeChapterId, syncProject]
+  )
+
+  const handleReorderChapters = useCallback(
+    async (projectId: string, order: string[]) => {
+      const updated = await projectBridge.reorderChapters(projectId, order)
+      if (updated) {
+        syncProject(updated)
+      }
+    },
+    [syncProject]
+  )
 
   const handleChapterSave = useCallback(async () => {
     if (!activeProjectSource || !activeChapterSource) return
@@ -357,6 +405,9 @@ function App() {
         onCreateChapter={handleCreateChapter}
         onOpenProjectManager={() => setIsManagerOpen(true)}
         onReorderProjects={handleReorderProjects}
+        onDeleteProject={handleDeleteProject}
+        onDeleteChapter={handleDeleteChapter}
+        onReorderChapters={handleReorderChapters}
       />
 
       <EditorPanel
@@ -377,6 +428,8 @@ function App() {
         onCloseTimeline={closeTimeline}
         onSelectSnapshot={handleSelectSnapshot}
         onRestoreSnapshot={handleRestoreSnapshot}
+        onDeleteSnapshot={handleDeleteSnapshot}
+        deletingSnapshot={deletingSnapshot}
         disableTimeline={isManagerOpen}
         theme={theme}
         onToggleTheme={handleThemeToggle}
