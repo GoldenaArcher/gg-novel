@@ -111,10 +111,9 @@ function App() {
       language: state.language
     }))
   )
-  const { toggleTheme, toggleLanguage, setManagerOpen } = useUiStore(
+  const { toggleTheme, setManagerOpen } = useUiStore(
     useShallow((state) => ({
       toggleTheme: state.toggleTheme,
-      toggleLanguage: state.toggleLanguage,
       setManagerOpen: state.setManagerOpen
     }))
   )
@@ -463,8 +462,6 @@ function App() {
             disableTimeline={isManagerOpen}
             theme={theme}
             onToggleTheme={handleThemeToggle}
-            language={language}
-            onToggleLanguage={toggleLanguage}
             onSaveChapter={() => handleChapterSave(draftText)}
           />
         </div>

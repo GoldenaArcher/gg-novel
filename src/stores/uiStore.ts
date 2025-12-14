@@ -12,6 +12,7 @@
  */
 import { create } from 'zustand'
 import type { ThemeMode } from '../shared/types'
+import i18n from '../i18n'
 
 export type AppLanguage = 'en' | 'zh'
 export type PaneKey = 'explorer' | 'outline' | 'timeline'
@@ -46,6 +47,21 @@ const getInitialLanguage = (): AppLanguage => {
   }
   return window.navigator.language.toLowerCase().startsWith('zh') ? 'zh' : 'en'
 }
+
+const syncLanguageWithI18n = (language: AppLanguage) => {
+  if (i18n.language === language) return
+  i18n.changeLanguage(language).catch(() => {})
+}
+
+const persistLanguagePreference = (language: AppLanguage) => {
+  if (typeof window !== 'undefined') {
+    window.localStorage.setItem('gg-language', language)
+  }
+  syncLanguageWithI18n(language)
+}
+
+const initialLanguage = getInitialLanguage()
+syncLanguageWithI18n(initialLanguage)
 
 // Sidebar dimension constants - exported for use across components
 export const SIDEBAR_MIN_WIDTH = 220        // Minimum draggable width
@@ -110,7 +126,7 @@ export const useUiStore = create<UiState>((set) => ({
   sidebarCollapsed: false,
   resizingSidebar: false,
   sidebarOverlayOpen: false,
-  language: getInitialLanguage(),
+  language: initialLanguage,
   paneOpen: {
     explorer: true,
     outline: true,
@@ -124,18 +140,16 @@ export const useUiStore = create<UiState>((set) => ({
   setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
   setResizingSidebar: (resizing) => set({ resizingSidebar: resizing }),
   setSidebarOverlayOpen: (open) => set({ sidebarOverlayOpen: open }),
-  setLanguage: (language) => {
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem('gg-language', language)
-    }
-    set({ language })
-  },
+  setLanguage: (language) =>
+    set((state) => {
+      if (state.language === language) return state
+      persistLanguagePreference(language)
+      return { language }
+    }),
   toggleLanguage: () =>
     set((state) => {
       const next = state.language === 'zh' ? 'en' : 'zh'
-      if (typeof window !== 'undefined') {
-        window.localStorage.setItem('gg-language', next)
-      }
+      persistLanguagePreference(next)
       return { language: next }
     }),
   setPaneOpen: (pane, open) =>
