@@ -1,6 +1,5 @@
 {
   "title": "项目管理",
-  "heading": "作品仪表盘",
   "close": "关闭",
   "search": {
     "placeholder": "搜索标题或简介"
@@ -38,7 +37,9 @@
     "delete": "删除"
   },
   "description": {
-    "empty": "暂无简介，点击\"编辑简介\"来添加内容。"
+    "empty": "暂无简介，直接输入即可添加。",
+    "placeholder": "输入简介",
+    "autoSaveHint": "系统会自动保存。"
   },
   "stats": {
     "words": "字数",

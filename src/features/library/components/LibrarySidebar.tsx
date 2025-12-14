@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   MdAdd,
   MdChevronRight,
@@ -15,15 +16,7 @@ import { FaArrowDown, FaArrowRight } from 'react-icons/fa'
 import { useShallow } from 'zustand/shallow'
 import type { Chapter, ChapterSnapshot, Project, StoryNodeKind } from '../../../shared/types'
 import { useUiStore } from '../../../stores/uiStore'
-import {
-  t,
-  formatWordLabel,
-  formatChapterLabel,
-  formatConfirmDeleteProject,
-  formatConfirmDeleteChapter,
-  formatPromptStructure,
-  formatEmptyContent
-} from '../../../shared/i18n'
+import { resolveLocale } from '../../../shared/i18n/utils'
 
 type NodeCreation = { projectId: string; parentId: string | null; kind: StoryNodeKind }
 type PaneKey = 'explorer' | 'outline' | 'timeline'
@@ -88,9 +81,9 @@ const flattenOutline = (nodes: Chapter[], depth = 1): OutlineItem[] => {
   return items
 }
 
-const formatTimestamp = (timestamp: number) => {
+const formatTimestamp = (timestamp: number, locale: string) => {
   const date = new Date(timestamp)
-  return `${date.toLocaleDateString()} ${date.toLocaleTimeString()}`
+  return `${date.toLocaleDateString(locale)} ${date.toLocaleTimeString(locale)}`
 }
 
 const distributePaneSpace = (openKeys: PaneKey[], available: number) => {
@@ -158,11 +151,12 @@ export const LibrarySidebar = ({
   const newProjectInputRef = useRef<HTMLInputElement>(null)
   const [draggingProjectId, setDraggingProjectId] = useState<string | null>(null)
   const projectListRef = useRef<HTMLDivElement>(null)
-  const { paneOpen, setPaneVisibility, language } = useUiStore(
+  const { t, i18n } = useTranslation(['library', 'common', 'timeline', 'editor'])
+  const locale = resolveLocale(i18n.language)
+  const { paneOpen, setPaneVisibility } = useUiStore(
     useShallow((state) => ({
       paneOpen: state.paneOpen,
-      setPaneVisibility: state.setPaneOpen,
-      language: state.language
+      setPaneVisibility: state.setPaneOpen
     }))
   )
   const [expandedProjects, setExpandedProjects] = useState<Record<string, boolean>>({})
@@ -434,14 +428,14 @@ export const LibrarySidebar = ({
   const paneTemplate = `${getPaneHeight('explorer')}px ${resizer1}px ${getPaneHeight('outline')}px ${resizer2}px ${getPaneHeight('timeline')}px`
 
   const requestProjectDelete = async (projectId: string, title: string) => {
-    const confirmed = window.confirm(formatConfirmDeleteProject(language, title))
+    const confirmed = window.confirm(t('library:confirm.deleteProject', { title }))
     if (confirmed) {
       await onDeleteProject(projectId)
     }
   }
 
   const requestChapterDelete = async (projectId: string, chapterId: string, title: string) => {
-    const confirmed = window.confirm(formatConfirmDeleteChapter(language, title))
+    const confirmed = window.confirm(t('library:confirm.deleteChapter', { title }))
     if (confirmed) {
       await onDeleteChapter(projectId, chapterId)
     }
@@ -591,12 +585,14 @@ export const LibrarySidebar = ({
 
   const renderNodeCreation = (projectId: string, parentId: string | null, depth: number) => {
     if (!nodeCreation || nodeCreation.projectId !== projectId || nodeCreation.parentId !== parentId) return null
+    const placeholderKey =
+      nodeCreation.kind === 'group' ? 'library:prompt.structureName' : 'library:prompt.chapterTitle'
     return (
       <div className="chapter-item creating" style={{ marginLeft: depth * 12 }}>
         <input
           ref={nodeInputRef}
           value={newNodeTitle}
-          placeholder={formatPromptStructure(language, nodeCreation.kind)}
+          placeholder={t(placeholderKey)}
           onChange={(event) => setNewNodeTitle(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === 'Enter') {
@@ -610,10 +606,10 @@ export const LibrarySidebar = ({
         />
         <div className="chapter-create-actions">
           <button className="mini primary" type="button" onClick={submitCreateNode}>
-            {t(language, 'actionSave')}
+            {t('common:action.save')}
           </button>
           <button className="mini ghost" type="button" onClick={cancelCreateNode}>
-            {t(language, 'actionCancel')}
+            {t('common:action.cancel')}
           </button>
         </div>
       </div>
@@ -675,13 +671,6 @@ export const LibrarySidebar = ({
   const renderNode = (projectId: string, node: Chapter, parentId: string | null, siblings: Chapter[], depth: number) => {
     const isExpanded = expandedNodes[node.id] ?? true
     const isActive = node.id === activeChapterId && projectId === activeProjectId
-    const wordsLabel =
-      node.kind === 'chapter'
-        ? formatWordLabel(language, node.words)
-        : formatChapterLabel(
-            language,
-            flattenOutline(node.children ?? []).filter((item) => item.kind === 'chapter').length
-          )
     const indent = depth * 22 + 8
 
     return (
@@ -723,13 +712,12 @@ export const LibrarySidebar = ({
             }}
           >
             <span>{node.title}</span>
-            <span className="tree-node__meta">{wordsLabel}</span>
           </button>
           <button
             className="icon-button danger subtle node-delete"
             type="button"
-            title={t(language, 'actionDelete')}
-            aria-label={`${t(language, 'actionDelete')} ${node.title}`}
+            title={t('common:action.delete')}
+            aria-label={`${t('common:action.delete')} ${node.title}`}
             onClick={() => requestChapterDelete(projectId, node.id, node.title)}
           >
             <MdDelete size={16} aria-hidden="true" />
@@ -762,7 +750,6 @@ export const LibrarySidebar = ({
           </button>
           <button className="tree-node__label" type="button" onClick={() => focusProject(project.id)}>
             <span>{project.title}</span>
-            <span className="tree-node__meta">{formatWordLabel(language, project.stats.words)}</span>
           </button>
         </div>
         {isExpanded && renderNodeList(project.id, project.structure ?? [], null)}
@@ -777,16 +764,16 @@ export const LibrarySidebar = ({
           <div className="pane-header">
             <button type="button" onClick={() => togglePane('explorer')}>
               {paneOpen.explorer ? <MdExpandMore size={18} /> : <MdChevronRight size={18} />}{' '}
-              {t(language, 'paneExplorerTitle')}
+              {t('library:pane.explorer')}
             </button>
             <div className="pane-toolbar">
-              <button className="icon-button" type="button" title={t(language, 'sidebarManageProjects')} onClick={onOpenProjectManager}>
+              <button className="icon-button" type="button" title={t('library:action.manageProjects')} onClick={onOpenProjectManager}>
                 <MdOutlinePlaylistAdd size={18} />
               </button>
               <button
                 className="icon-button"
                 type="button"
-                title={t(language, 'sidebarNewProject')}
+                title={t('library:action.newProject')}
                 onClick={() => setCreatingProject(true)}
                 disabled={creatingProject}
               >
@@ -800,14 +787,14 @@ export const LibrarySidebar = ({
                 <div className="explorer-actions">
                   <button
                     type="button"
-                    title={t(language, 'sidebarNewStructure')}
+                    title={t('library:action.newStructure')}
                     onClick={() => startCreateNode(activeProject.id, null, 'group')}
                   >
                     <MdOutlineCreateNewFolder size={18} aria-hidden="true" />
                   </button>
                   <button
                     type="button"
-                    title={t(language, 'sidebarNewChapter')}
+                    title={t('library:action.newChapter')}
                     onClick={() => startCreateNode(activeProject.id, null, 'chapter')}
                   >
                     <MdOutlineNoteAdd size={18} aria-hidden="true" />
@@ -815,7 +802,7 @@ export const LibrarySidebar = ({
                   <button
                     type="button"
                     className="danger"
-                    title={t(language, 'sidebarDeleteProject')}
+                    title={t('library:action.deleteProject')}
                     onClick={() => requestProjectDelete(activeProject.id, activeProject.title)}
                   >
                     <MdDelete size={18} aria-hidden="true" />
@@ -836,7 +823,7 @@ export const LibrarySidebar = ({
                     <input
                       ref={newProjectInputRef}
                       value={newProjectTitle}
-                      placeholder={t(language, 'placeholderProjectName')}
+                      placeholder={t('library:placeholder.projectName')}
                       onChange={(event) => setNewProjectTitle(event.target.value)}
                       onKeyDown={(event) => {
                         if (event.key === 'Enter') {
@@ -851,7 +838,7 @@ export const LibrarySidebar = ({
                   </div>
                 )}
                 {projects.map((project) => renderProjectNode(project))}
-                {projects.length === 0 && <p className="muted">{t(language, 'sidebarNoProjects')}</p>}
+                {projects.length === 0 && <p className="muted">{t('library:empty.noProjects')}</p>}
               </div>
             </div>
           )}
@@ -867,28 +854,28 @@ export const LibrarySidebar = ({
           <div className="pane-header">
             <button type="button" onClick={() => togglePane('outline')}>
               {paneOpen.outline ? <MdExpandMore size={18} /> : <MdChevronRight size={18} />}{' '}
-              {t(language, 'paneOutlineTitle')}
+              {t('library:pane.outline')}
             </button>
           </div>
           {paneOpen.outline && (
             <div className="pane-body outline-pane">
               {!selectedOutline ? (
-                <p className="muted">{t(language, 'sidebarOutlineEmpty')}</p>
+                <p className="muted">{t('library:empty.outlineEmpty')}</p>
               ) : (
                 <article className="outline-detail">
                   <p className="outline-detail__label">
                     {selectedOutline.kind === 'project'
-                      ? t(language, 'sidebarOutlineProjectLabel')
+                      ? t('library:outline.projectLabel')
                       : selectedOutline.kind === 'group'
-                      ? t(language, 'sidebarOutlineStructureLabel')
-                      : t(language, 'sidebarOutlineChapterLabel')}
+                      ? t('library:outline.structureLabel')
+                      : t('library:outline.chapterLabel')}
                   </p>
                   <h4>{selectedOutline.title}</h4>
                   <p className="outline-summary">
                     {selectedOutline.summary?.trim() ||
                       (selectedOutline.kind === 'project'
-                        ? t(language, 'sidebarOutlineProjectPlaceholder')
-                        : t(language, 'sidebarOutlineChapterPlaceholder'))}
+                        ? t('library:outline.projectPlaceholder')
+                        : t('library:outline.chapterPlaceholder'))}
                   </p>
                 </article>
               )}
@@ -906,10 +893,10 @@ export const LibrarySidebar = ({
           <div className="pane-header">
             <button type="button" onClick={() => togglePane('timeline')}>
               {paneOpen.timeline ? <MdExpandMore size={18} /> : <MdChevronRight size={18} />}{' '}
-              {t(language, 'paneTimelineTitle')}
+              {t('library:pane.timeline')}
             </button>
             <div className="pane-toolbar">
-              <button className="icon-button" type="button" title={t(language, 'sidebarTimelineButton')} onClick={onOpenTimeline}>
+              <button className="icon-button" type="button" title={t('library:action.timelineButton')} onClick={onOpenTimeline}>
                 <MdHistory size={18} />
               </button>
             </div>
@@ -917,7 +904,7 @@ export const LibrarySidebar = ({
           {paneOpen.timeline && (
             <div className="pane-body timeline-pane">
               {snapshots.length === 0 ? (
-                <p className="muted">{t(language, 'sidebarTimelineEmpty')}</p>
+                <p className="muted">{t('library:empty.timelineEmpty')}</p>
               ) : (
                 <div className="timeline-list">
                   {snapshots.slice(0, 6).map((entry) => (
@@ -925,17 +912,17 @@ export const LibrarySidebar = ({
                       key={entry.timestamp}
                       className="timeline-row"
                       type="button"
-                      title={entry.preview || formatEmptyContent(language)}
+                      title={entry.preview || t('library:timeline.emptyContent')}
                       onClick={onOpenTimeline}
                     >
-                      <span>{formatTimestamp(entry.timestamp)}</span>
-                      <span className="timeline-meta">{formatWordLabel(language, entry.words)}</span>
+                      <span>{formatTimestamp(entry.timestamp, locale)}</span>
+                      <span className="timeline-meta">{t('timeline:words', { count: entry.words })}</span>
                     </button>
                   ))}
                 </div>
               )}
               <button className="mini ghost" type="button" onClick={onOpenTimeline}>
-                {t(language, 'sidebarTimelineOpenAll')}
+                {t('library:timeline.openAll')}
               </button>
             </div>
           )}

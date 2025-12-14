@@ -125,7 +125,6 @@ export const EditorPanel = ({
               onDelete={onDeleteSnapshot}
               deletingTimestamp={deletingSnapshot}
               onClose={onCloseTimeline}
-              language={language}
             />
           </div>
         </div>

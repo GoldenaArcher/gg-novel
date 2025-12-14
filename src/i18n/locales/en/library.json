@@ -17,6 +17,10 @@
     "outlineEmpty": "No outline available yet.",
     "timelineEmpty": "No history available. Save a chapter to create snapshots."
   },
+  "meta": {
+    "chapters": "{{count}} chapter",
+    "chapters_plural": "{{count}} chapters"
+  },
   "outline": {
     "projectLabel": "Project Description",
     "structureLabel": "Structure Summary",

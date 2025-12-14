@@ -22,6 +22,7 @@
  */
 
 import { useEffect, useMemo, useState, type CSSProperties } from 'react'
+import { useTranslation } from 'react-i18next'
 import '../styles/app.scss'
 import { EditorPanel } from '../features/editor/components/EditorPanel'
 import { LibrarySidebar } from '../features/library/components/LibrarySidebar'
@@ -37,7 +38,6 @@ import {
   getProjectsWithLiveDraft
 } from '../stores/projectStore'
 import { useEditorStore } from '../stores/editorStore'
-import { t } from '../shared/i18n'
 import { useUiStore } from '../stores/uiStore'
 import { useTimeline } from '../features/editor/hooks/useTimeline'
 import { useProjectOperations } from '../features/library/hooks/useProjectOperations'
@@ -88,6 +88,7 @@ const useMediaQuery = (query: string) => {
 }
 
 function App() {
+  const { t } = useTranslation('common')
   // ===== Zustand Store Subscriptions =====
   // Project store: Core project and chapter state
   const projects = useProjectStore((state) => state.projects)
@@ -104,11 +105,10 @@ function App() {
   const activeChapterSource = useProjectStore(selectActiveChapter)
 
   // UI store: Theme and dialog state
-  const { theme, isManagerOpen, language } = useUiStore(
+  const { theme, isManagerOpen } = useUiStore(
     useShallow((state) => ({
       theme: state.theme,
-      isManagerOpen: state.isManagerOpen,
-      language: state.language
+      isManagerOpen: state.isManagerOpen
     }))
   )
   const { toggleTheme, setManagerOpen } = useUiStore(
@@ -395,7 +395,12 @@ function App() {
     <>
       {/* Floating button to reopen sidebar (shown when collapsed or on mobile) */}
       {shouldShowFloatingToggle && (
-        <button className="floating-sidebar-button" type="button" onClick={handleFloatingButtonClick} aria-label={t(language, 'sidebarOpenButton')}>
+        <button
+          className="floating-sidebar-button"
+          type="button"
+          onClick={handleFloatingButtonClick}
+          aria-label={t('sidebar.openButton')}
+        >
           <MdSettings size={20} aria-hidden="true" />
         </button>
       )}
@@ -426,7 +431,7 @@ function App() {
           ) : (
             !isCompactLayout && (
               <button className="sidebar-expand-button" type="button" onClick={reopenSidebar}>
-                {t(language, 'sidebarExpandButton')}
+                {t('sidebar.expandButton')}
               </button>
             )
           )}
@@ -491,7 +496,12 @@ function App() {
         <div className="sidebar-overlay" role="dialog" aria-modal="true">
           <div className="sidebar-overlay__backdrop" onClick={closeSidebarOverlay} />
           <div className="sidebar-overlay__panel">
-            <button className="sidebar-overlay__close icon-button subtle" type="button" onClick={closeSidebarOverlay} aria-label={t(language, 'sidebarCloseButton')}>
+            <button
+              className="sidebar-overlay__close icon-button subtle"
+              type="button"
+              onClick={closeSidebarOverlay}
+              aria-label={t('sidebar.closeButton')}
+            >
               <MdClose size={18} aria-hidden="true" />
             </button>
             <LibrarySidebar

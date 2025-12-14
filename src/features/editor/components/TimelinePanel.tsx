@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
+
 import { ChapterSnapshot } from '../../../shared/types'
-import { AppLanguage } from '../../../stores/uiStore'
-import { t, formatWordLabel, formatEmptyContent } from '../../../shared/i18n'
+import { resolveLocale } from '../../../shared/i18n/utils'
 
 interface TimelinePanelProps {
   entries: ChapterSnapshot[]
@@ -14,12 +15,11 @@ interface TimelinePanelProps {
   onDelete: (timestamp: number) => Promise<void> | void
   deletingTimestamp?: number | null
   onClose: () => void
-  language: AppLanguage
 }
 
-const formatTimestamp = (timestamp: number) => {
+const formatTimestamp = (timestamp: number, locale: string) => {
   const date = new Date(timestamp)
-  return date.toLocaleString()
+  return date.toLocaleString(locale)
 }
 
 export const TimelinePanel = ({
@@ -32,9 +32,13 @@ export const TimelinePanel = ({
   onRestore,
   onDelete,
   deletingTimestamp,
-  onClose,
-  language
+  onClose
 }: TimelinePanelProps) => {
+  const { t, i18n } = useTranslation(['timeline', 'common'])
+  const locale = resolveLocale(i18n.language)
+  const formatWords = (value: number) => t('timeline:words', { count: value })
+  const emptyContent = t('timeline:preview.emptyContent')
+
   const [pendingDelete, setPendingDelete] = useState<number | null>(null)
   const activeEntry = useMemo(() => entries.find((entry) => entry.timestamp === pendingDelete), [entries, pendingDelete])
 
@@ -66,15 +70,15 @@ export const TimelinePanel = ({
     <section className="timeline-panel">
       <header>
         <div>
-          <p className="muted small">{t(language, 'timelineSubtitle')}</p>
-          <h3>{t(language, 'timelineTitle')}</h3>
+          <p className="muted small">{t('timeline:subtitle')}</p>
+          <h3>{t('timeline:title')}</h3>
         </div>
         <div className="timeline-actions">
           <button className="mini ghost" type="button" onClick={onClose}>
-            {t(language, 'actionClose')}
+            {t('common:action.close')}
           </button>
           <button className="mini primary" type="button" onClick={onRestore} disabled={!preview}>
-            {t(language, 'actionRestoreEditor')}
+            {t('timeline:action.restore')}
           </button>
           <button
             className="mini ghost danger"
@@ -82,16 +86,16 @@ export const TimelinePanel = ({
             disabled={!selectedTimestamp || Boolean(deletingTimestamp)}
             onClick={requestDelete}
           >
-            {t(language, 'actionDeleteVersion')}
+            {t('timeline:action.delete')}
           </button>
         </div>
       </header>
       <div className="timeline-body">
         <div className="timeline-list">
           {loading ? (
-            <p className="muted">{t(language, 'timelineLoading')}</p>
+            <p className="muted">{t('timeline:loading')}</p>
           ) : entries.length === 0 ? (
-            <p className="muted">{t(language, 'timelineEmpty')}</p>
+            <p className="muted">{t('timeline:empty')}</p>
           ) : (
             entries.map((entry) => (
               <button
@@ -100,21 +104,21 @@ export const TimelinePanel = ({
                 onClick={() => onSelect(entry.timestamp)}
               >
                 <div>
-                  <p className="timeline-entry__time">{formatTimestamp(entry.timestamp)}</p>
-                  <p className="muted small">{formatWordLabel(language, entry.words)}</p>
+                  <p className="timeline-entry__time">{formatTimestamp(entry.timestamp, locale)}</p>
+                  <p className="muted small">{formatWords(entry.words)}</p>
                 </div>
-                <p className="timeline-entry__preview">{entry.preview || formatEmptyContent(language)}</p>
+                <p className="timeline-entry__preview">{entry.preview || emptyContent}</p>
               </button>
             ))
           )}
         </div>
         <div className="timeline-preview">
           {previewLoading ? (
-            <p className="muted">{t(language, 'timelinePreviewLoading')}</p>
+            <p className="muted">{t('timeline:preview.loading')}</p>
           ) : preview ? (
             <pre>{preview}</pre>
           ) : (
-            <p className="muted">{t(language, 'timelinePreviewPlaceholder')}</p>
+            <p className="muted">{t('timeline:preview.placeholder')}</p>
           )}
         </div>
       </div>
@@ -122,16 +126,16 @@ export const TimelinePanel = ({
         <div className="timeline-confirm">
           <div className="timeline-confirm__card">
             <div>
-              <p className="muted small">{t(language, 'timelineConfirmDelete')}</p>
-              <h4>{formatTimestamp(pendingDelete)}</h4>
+              <p className="muted small">{t('timeline:confirm.delete')}</p>
+              <h4>{formatTimestamp(pendingDelete, locale)}</h4>
               <p className="muted small">
-                {formatWordLabel(language, activeEntry?.words ?? 0)} · {activeEntry?.preview || formatEmptyContent(language)}
+                {formatWords(activeEntry?.words ?? 0)} · {activeEntry?.preview || emptyContent}
               </p>
-              <p className="timeline-confirm__note">{t(language, 'timelineConfirmDeleteNote')}</p>
+              <p className="timeline-confirm__note">{t('timeline:confirm.deleteNote')}</p>
             </div>
             <div className="timeline-confirm__actions">
               <button className="ghost" type="button" onClick={cancelDelete} disabled={isDeleting}>
-                {t(language, 'actionCancel')}
+                {t('common:action.cancel')}
               </button>
               <button
                 className="danger"
@@ -139,7 +143,7 @@ export const TimelinePanel = ({
                 onClick={confirmDelete}
                 disabled={isDeleting}
               >
-                {isDeleting ? t(language, 'timelineDeleting') : t(language, 'actionDeleteVersion')}
+                {isDeleting ? t('timeline:deleting') : t('timeline:action.delete')}
               </button>
             </div>
           </div>

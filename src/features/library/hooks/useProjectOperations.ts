@@ -1,9 +1,8 @@
 import { useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useShallow } from 'zustand/shallow'
 import { projectBridge } from '../../../services/ipcClient'
 import { useProjectStore, selectActiveProject, selectActiveChapter } from '../../../stores/projectStore'
-import { useUiStore } from '../../../stores/uiStore'
-import { formatPromptStructure } from '../../../shared/i18n'
 import type { Project, StoryNodeKind } from '../../../shared/types'
 
 export const useProjectOperations = () => {
@@ -30,7 +29,7 @@ export const useProjectOperations = () => {
   )
   const activeProject = useProjectStore(selectActiveProject)
   const activeChapter = useProjectStore(selectActiveChapter)
-  const language = useUiStore((state) => state.language)
+  const { t } = useTranslation('library')
 
   const syncProjectWrapper = useCallback(
     (nextProject: Project | null) => {
@@ -57,7 +56,11 @@ export const useProjectOperations = () => {
     async (projectId: string, title?: string, options?: { parentId?: string; kind?: StoryNodeKind }) => {
       let nextTitle = title?.trim()
       if (!nextTitle) {
-        const input = window.prompt(formatPromptStructure(language, options?.kind ?? 'chapter'))
+        const promptKey =
+          (options?.kind ?? 'chapter') === 'group'
+            ? 'prompt.structureName'
+            : 'prompt.chapterTitle'
+        const input = window.prompt(t(promptKey))
         if (!input) return
         nextTitle = input.trim()
         if (!nextTitle) return

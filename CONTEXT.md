@@ -28,21 +28,16 @@ This document describes the higher-level goals, responsibilities, and current im
   - `src/features/notes/`: Notes & Insights modules (inspiration cards, progress tracking).
 - `src/data/`: Future data adapters (API clients, migrations, import/export helpers). Currently unused because persistence lives in the Electron main process.
 - `src/shared/`: Cross-cutting types and utilities (e.g., `types.ts` for Chapter, Project, ThemeMode, StoryNodeKind definitions) that multiple features consume.
-  - `i18n.ts`: Legacy custom i18n solution. Contains ~120 translation keys and custom formatter functions (`formatWordLabel`, `formatChapterLabel`, `formatConfirmDeleteProject`, etc.).
+  - `i18n/utils.ts`: i18n utility functions (locale resolution helpers).
 - `src/shared/components/`: Reusable UI components.
   - `ModalPortal.tsx`: React portal wrapper used by every modal (project manager, timeline, future dialogs). Handles scroll locking by toggling `body.modal-open`.
   - `ErrorBoundary.tsx`: React error boundary for graceful error handling with user-friendly UI and recovery options.
 - `src/i18n/`: Internationalization infrastructure (i18next-based).
+  - `index.ts`: i18next initialization and configuration.
   - `config.ts`: i18next configuration exports (supported languages, namespaces, defaults).
-  - `locales/en/`: English translation JSON files (4 namespaces: common, editor, library, timeline).
-  - `locales/zh/`: Simplified Chinese translation JSON files (4 namespaces: common, editor, library, timeline).
-  - Total: 8 JSON files (4 namespaces × 2 languages).
-  - **Namespaces**:
-    - `common`: Shared actions, buttons, theme/language toggles, sidebar controls
-    - `editor`: Editor panel strings including autosave status, metadata labels, relative time formatting with pluralization support
-    - `library`: Sidebar panes, CRUD actions, placeholders, confirmations, tooltips for project/chapter management
-    - `timeline`: Timeline panel strings including loading states, preview placeholders, deletion confirmations
-    - `project-manager` and `insights`: Planned but not yet created
+  - `locales/en/`: English translation JSON files.
+  - `locales/zh/`: Simplified Chinese translation JSON files.
+  - Organized by namespace for modularity (common UI strings, feature-specific translations).
 - `src/styles/`: Global Sass setup. `_tokens.scss` defines theme variables, `_mixins.scss` contains reusable style patterns, `base.scss` resets the page + theme variables, `app.scss` styles the shell components including CSS custom properties for dynamic sizing, and `error-boundary.scss` styles the error UI.
 - `dist/`, `dist-electron/`, `release/`: Generated output after running `npm run build` (renderer bundle, Electron bundle, and packaged apps). These folders are created during builds and can be cleaned if necessary.
 - `electron/services/`: Main-process utilities. `projectStore.ts` is the filesystem-backed persistence layer (projects, chapters, autosave cache, snapshot timeline, hierarchical structure management).
@@ -253,13 +248,12 @@ This document describes the higher-level goals, responsibilities, and current im
 - **Build tooling**: Vite for renderer, electron-builder for packaging
 - **Testing**: No test framework configured yet
 - **Internationalization**: 
-  - **Current system**: Dual i18n infrastructure
-    - Legacy: Custom solution in `src/shared/i18n.ts` (~120 keys) - currently in use
-    - Modern: i18next + react-i18next infrastructure available (8 JSON files, 4 namespaces × 2 languages)
+  - **System**: i18next + react-i18next with `useTranslation()` hook
   - **Languages**: Simplified Chinese (zh-CN, default) and English (en-US)
-  - **Dependencies**: `i18next@^23.7.18`, `react-i18next@^13.5.0` installed
-  - **Architecture**: Namespace-based organization (common, editor, library, timeline, project-manager, insights)
+  - **Dependencies**: `i18next`, `react-i18next`
+  - **Architecture**: Namespace-based JSON files in `src/i18n/locales/`
   - **Language state**: Managed by `uiStore` with localStorage persistence (`gg-language` key) and browser language detection
+  - **Utilities**: Locale resolution helpers in `src/shared/i18n/utils.ts`
 - **State management**: Zustand-based architecture (All stages complete)
   - `projectStore`: Project and chapter management
   - `editorStore`: Draft, autosave, and timeline features

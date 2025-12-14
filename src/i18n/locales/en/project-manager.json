@@ -1,6 +1,5 @@
 {
   "title": "Project Manager",
-  "heading": "Project Dashboard",
   "close": "Close",
   "search": {
     "placeholder": "Search by title or description"
@@ -38,7 +37,9 @@
     "delete": "Delete"
   },
   "description": {
-    "empty": "No description yet. Click \"Edit description\" to add one."
+    "empty": "No description yet. Start typing to add one.",
+    "placeholder": "Add a description",
+    "autoSaveHint": "Saved automatically."
   },
   "stats": {
     "words": "Words",

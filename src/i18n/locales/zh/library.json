@@ -17,6 +17,9 @@
     "outlineEmpty": "暂无可用的大纲内容。",
     "timelineEmpty": "暂无历史版本，保存章节后将自动生成快照。"
   },
+  "meta": {
+    "chapters": "{{count}} 章节"
+  },
   "outline": {
     "projectLabel": "作品简介",
     "structureLabel": "结构摘要",

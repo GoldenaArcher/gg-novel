@@ -1,6 +1,9 @@
 import { useMemo, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
+
 import { Project } from '../../../shared/types'
 import { ModalPortal } from '../../../shared/components/ModalPortal'
+import { resolveLocale } from '../../../shared/i18n/utils'
 
 type SortMode = 'manual' | 'updated' | 'created' | 'title'
 
@@ -33,13 +36,20 @@ export const ProjectManagerDialog = ({
   const [createDescription, setCreateDescription] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editTitle, setEditTitle] = useState('')
-  const [editingDescriptionId, setEditingDescriptionId] = useState<string | null>(null)
-  const [descriptionDraft, setDescriptionDraft] = useState('')
+  const [descriptionDrafts, setDescriptionDrafts] = useState<Record<string, string>>({})
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [sortMode, setSortMode] = useState<SortMode>('manual')
   const gridRef = useRef<HTMLDivElement>(null)
+  const { t, i18n } = useTranslation(['project-manager', 'common'])
+  const locale = resolveLocale(i18n.language)
+  const numberFormatter = useMemo(() => new Intl.NumberFormat(locale), [locale])
+  const formatNumber = (value: number) => numberFormatter.format(value)
+  const formatDate = (timestamp: number | undefined) =>
+    new Date(timestamp ?? Date.now()).toLocaleDateString(locale)
+  const formatDateTime = (timestamp: number | undefined) =>
+    new Date(timestamp ?? Date.now()).toLocaleString(locale)
 
   const pendingDeleteProject = useMemo(
     () => projects.find((project) => project.id === pendingDeleteId),
@@ -98,16 +108,19 @@ export const ProjectManagerDialog = ({
     setEditTitle('')
   }
 
-  const startDescriptionEdit = (project: Project) => {
-    setEditingDescriptionId(project.id)
-    setDescriptionDraft(project.description ?? '')
+  const handleDescriptionChange = (projectId: string, value: string) => {
+    setDescriptionDrafts((current) => ({
+      ...current,
+      [projectId]: value
+    }))
   }
 
-  const submitDescription = async () => {
-    if (!editingDescriptionId) return
-    await onUpdateDescription(editingDescriptionId, descriptionDraft.trim())
-    setEditingDescriptionId(null)
-    setDescriptionDraft('')
+  const handleDescriptionBlur = async (project: Project) => {
+    const currentValue = descriptionDrafts[project.id] ?? project.description ?? ''
+    const trimmed = currentValue.trim()
+    const existing = project.description?.trim() ?? ''
+    if (trimmed === existing) return
+    await onUpdateDescription(project.id, trimmed)
   }
 
   const resolveGridTarget = (clientY: number) => {
@@ -158,28 +171,27 @@ export const ProjectManagerDialog = ({
         <div className="modal-content project-manager">
         <header className="modal-header">
           <div>
-            <p className="muted">项目管理</p>
-            <h2>作品仪表盘</h2>
+            <p className="muted">{t('project-manager:title')}</p>
           </div>
           <button className="ghost" onClick={onClose}>
-            关闭
+            {t('project-manager:close')}
           </button>
         </header>
 
         <section className="project-toolbar">
           <input
             type="search"
-            placeholder="搜索标题或简介"
+            placeholder={t('project-manager:search.placeholder')}
             value={searchQuery}
             onChange={(event) => setSearchQuery(event.target.value)}
           />
           <label className="sort-control">
-            <span>排序</span>
+            <span>{t('project-manager:sort.label')}</span>
             <select value={sortMode} onChange={(event) => setSortMode(event.target.value as SortMode)}>
-              <option value="manual">自定义顺序</option>
-              <option value="updated">最近更新</option>
-              <option value="created">创建时间</option>
-              <option value="title">标题</option>
+              <option value="manual">{t('project-manager:sort.manual')}</option>
+              <option value="updated">{t('project-manager:sort.updated')}</option>
+              <option value="created">{t('project-manager:sort.created')}</option>
+              <option value="title">{t('project-manager:sort.title')}</option>
             </select>
           </label>
         </section>
@@ -189,25 +201,26 @@ export const ProjectManagerDialog = ({
             <div className="create-project__fields">
               <input
                 type="text"
-                placeholder="新作品标题"
+                placeholder={t('project-manager:create.titlePlaceholder')}
                 value={createTitle}
                 onChange={(event) => setCreateTitle(event.target.value)}
               />
               <textarea
-                placeholder="可选：添加简介，用于检索、提示创作方向"
+                placeholder={t('project-manager:create.descriptionPlaceholder')}
                 value={createDescription}
                 onChange={(event) => setCreateDescription(event.target.value)}
                 rows={2}
+                style={{ resize: 'none' }}
               />
             </div>
             <div className="create-project__actions">
               <button className="primary" type="submit">
-                创建
+                {t('project-manager:create.submit')}
               </button>
             </div>
           </form>
           <p className="muted">
-            基础排序遵循创建时间。拖拽仅在“自定义顺序”且无搜索时可用，其他排序仅改变当前视图，方便快速筛查。
+            {t('project-manager:create.hint')}
           </p>
         </section>
 
@@ -237,11 +250,13 @@ export const ProjectManagerDialog = ({
           }}
         >
           {displayProjects.length === 0 && (
-            <p className="muted">{projects.length === 0 ? '还没有作品，填写上方表单开始新故事吧。' : '未找到符合搜索条件的作品。'}</p>
+            <p className="muted">
+              {projects.length === 0 ? t('project-manager:empty.noProjects') : t('project-manager:empty.noMatches')}
+            </p>
           )}
           {displayProjects.map((project) => {
             const isActive = project.id === activeProjectId
-            const createdAt = new Date(project.createdAt ?? Date.now()).toLocaleDateString()
+            const createdAt = formatDate(project.createdAt)
             const latestChapter = project.chapters.reduce(
               (latest, chapter) => {
                 if (!latest) return chapter
@@ -251,15 +266,13 @@ export const ProjectManagerDialog = ({
               },
               undefined as Project['chapters'][number] | undefined
             )
-            const lastUpdatedLabel = latestChapter ? latestChapter.title : '暂无章节'
-            const lastUpdatedTime = latestChapter
-              ? new Date(latestChapter.updatedAt ?? Date.now()).toLocaleString()
-              : '--'
+            const lastUpdatedLabel = latestChapter ? latestChapter.title : t('project-manager:label.noChapters')
+            const lastUpdatedTime = latestChapter ? formatDateTime(latestChapter.updatedAt) : t('project-manager:label.noUpdates')
             const statItems = [
-              { label: '字数', value: project.stats.words.toLocaleString() },
-              { label: '角色卡', value: project.stats.characters.toLocaleString() },
-              { label: '章节', value: project.chapters.length.toString() },
-              { label: '进度', value: `${Math.round(project.progress.overall)}%` }
+              { label: t('project-manager:stats.words'), value: formatNumber(project.stats.words) },
+              { label: t('project-manager:stats.characters'), value: formatNumber(project.stats.characters) },
+              { label: t('project-manager:stats.chapters'), value: project.chapters.length.toString() },
+              { label: t('project-manager:stats.progress'), value: `${Math.round(project.progress.overall)}%` }
             ]
             return (
               <article
@@ -294,7 +307,7 @@ export const ProjectManagerDialog = ({
                     <input value={editTitle} onChange={(event) => setEditTitle(event.target.value)} autoFocus />
                     <div className="project-row__edit-actions">
                       <button className="mini primary" type="button" onClick={submitRename}>
-                        保存
+                        {t('project-manager:save.title')}
                       </button>
                       <button
                         className="mini ghost"
@@ -304,7 +317,7 @@ export const ProjectManagerDialog = ({
                           setEditTitle('')
                         }}
                       >
-                        取消
+                        {t('common:action.cancel')}
                       </button>
                     </div>
                   </div>
@@ -313,54 +326,38 @@ export const ProjectManagerDialog = ({
                     <div className="project-row__header">
                       <div className="project-row__title">
                         <h3>{project.title}</h3>
-                        {isActive && <span className="project-badge">当前作品</span>}
+                        {isActive && <span className="project-badge">{t('project-manager:badge.active')}</span>}
                       </div>
                       <p className="muted small project-row__meta">
-                        创建 {createdAt} · 最近更新 {lastUpdatedLabel} · 更新时间 {lastUpdatedTime}
+                        {t('project-manager:label.created')} {createdAt} · {t('project-manager:label.updated')} {lastUpdatedLabel} · {lastUpdatedTime}
                       </p>
                     </div>
                     <div className="project-row__actions">
                       <button className="mini ghost" type="button" onClick={() => onSelect(project.id)}>
-                        {isActive ? '当前作品' : '设为当前'}
-                      </button>
-                      <button className="mini ghost" type="button" onClick={() => startDescriptionEdit(project)}>
-                        编辑简介
+                        {isActive ? t('project-manager:badge.active') : t('project-manager:action.setActive')}
                       </button>
                       <button className="mini ghost" type="button" onClick={() => startRename(project)}>
-                        重命名
+                        {t('project-manager:action.rename')}
                       </button>
                       <button className="mini ghost danger" type="button" onClick={() => setPendingDeleteId(project.id)}>
-                        删除
+                        {t('project-manager:action.delete')}
                       </button>
                     </div>
-                    {editingDescriptionId === project.id ? (
-                      <div className="project-row__description-edit">
-                        <textarea
-                          value={descriptionDraft}
-                          rows={3}
-                          onChange={(event) => setDescriptionDraft(event.target.value)}
-                        />
-                        <div className="project-row__edit-actions">
-                          <button className="mini primary" type="button" onClick={submitDescription}>
-                            保存简介
-                          </button>
-                          <button
-                            className="mini ghost"
-                            type="button"
-                            onClick={() => {
-                              setEditingDescriptionId(null)
-                              setDescriptionDraft('')
-                            }}
-                          >
-                            取消
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <p className={`project-row__description${project.description ? '' : ' empty'}`}>
-                        <span>{project.description || '暂无简介，点击“编辑简介”来添加内容。'}</span>
-                      </p>
-                    )}
+                    <div className="project-row__description-edit inline">
+                      <textarea
+                        value={descriptionDrafts[project.id] ?? project.description ?? ''}
+                        rows={3}
+                        className="description-textarea"
+                        placeholder={t('project-manager:description.placeholder')}
+                        onChange={(event) => handleDescriptionChange(project.id, event.target.value)}
+                        onBlur={() => handleDescriptionBlur(project)}
+                        style={{ resize: 'none' }}
+                      />
+                      {!((descriptionDrafts[project.id] ?? project.description)?.trim()) && (
+                        <p className="project-row__description-hint muted small">{t('project-manager:description.empty')}</p>
+                      )}
+                      <p className="project-row__description-hint muted small">{t('project-manager:description.autoSaveHint')}</p>
+                    </div>
                     <ul className="project-row__stats">
                       {statItems.map((item) => (
                         <li key={item.label}>
@@ -380,17 +377,17 @@ export const ProjectManagerDialog = ({
           <div className="modal-overlay inline">
             <div className="modal-content confirm-modal">
               <header>
-                <p className="muted">确认删除</p>
+                <p className="muted">{t('project-manager:delete.title')}</p>
                 <h3>{pendingDeleteProject.title}</h3>
               </header>
               <p className="muted">
                 {pendingDeleteProject.id === activeProjectId
-                  ? '这是当前激活的作品，删除后系统会自动切换至其他作品。该操作不可恢复，请确保已备份。'
-                  : '该操作不可恢复，请确保您已备份所需内容。'}
+                  ? t('project-manager:delete.activeWarning')
+                  : t('project-manager:delete.warning')}
               </p>
               <div className="confirm-modal__actions">
                 <button className="ghost" type="button" onClick={() => setPendingDeleteId(null)}>
-                  取消
+                  {t('common:action.cancel')}
                 </button>
                 <button
                   className="danger"
@@ -400,7 +397,7 @@ export const ProjectManagerDialog = ({
                     setPendingDeleteId(null)
                   }}
                 >
-                  删除
+                  {t('common:action.delete')}
                 </button>
               </div>
             </div>
