@@ -1,0 +1,25 @@
+{
+  "action": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "close": "Close",
+    "delete": "Delete",
+    "create": "Create",
+    "rename": "Rename",
+    "edit": "Edit",
+    "setActive": "Set active"
+  },
+  "language": {
+    "toggleToChinese": "Switch to Chinese",
+    "toggleToEnglish": "Switch to English"
+  },
+  "sidebar": {
+    "openButton": "Open sidebar",
+    "closeButton": "Close sidebar",
+    "expandButton": "Expand sidebar"
+  },
+  "theme": {
+    "toggleLight": "Light mode",
+    "toggleDark": "Dark mode"
+  }
+}

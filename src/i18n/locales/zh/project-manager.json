@@ -1,0 +1,60 @@
+{
+  "title": "项目管理",
+  "heading": "作品仪表盘",
+  "close": "关闭",
+  "search": {
+    "placeholder": "搜索标题或简介"
+  },
+  "sort": {
+    "label": "排序",
+    "manual": "自定义顺序",
+    "updated": "最近更新",
+    "created": "创建时间",
+    "title": "标题"
+  },
+  "create": {
+    "titlePlaceholder": "新作品标题",
+    "descriptionPlaceholder": "可选：添加简介，用于检索、提示创作方向",
+    "submit": "创建",
+    "hint": "基础排序遵循创建时间。拖拽仅在\"自定义顺序\"且无搜索时可用，其他排序仅改变当前视图，方便快速筛查。"
+  },
+  "empty": {
+    "noProjects": "还没有作品，填写上方表单开始新故事吧。",
+    "noMatches": "未找到符合搜索条件的作品。"
+  },
+  "label": {
+    "created": "创建",
+    "updated": "最近更新",
+    "noChapters": "暂无章节",
+    "noUpdates": "--"
+  },
+  "badge": {
+    "active": "当前作品"
+  },
+  "action": {
+    "setActive": "设为当前",
+    "editDescription": "编辑简介",
+    "rename": "重命名",
+    "delete": "删除"
+  },
+  "description": {
+    "empty": "暂无简介，点击\"编辑简介\"来添加内容。"
+  },
+  "stats": {
+    "words": "字数",
+    "characters": "角色卡",
+    "chapters": "章节",
+    "progress": "进度"
+  },
+  "delete": {
+    "title": "确认删除",
+    "activeWarning": "这是当前激活的作品，删除后系统会自动切换至其他作品。该操作不可恢复，请确保已备份。",
+    "warning": "该操作不可恢复，请确保您已备份所需内容。",
+    "inProgress": "删除中..."
+  },
+  "save": {
+    "title": "保存",
+    "description": "保存简介",
+    "cancel": "取消"
+  }
+}

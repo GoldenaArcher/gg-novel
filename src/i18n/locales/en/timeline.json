@@ -1,0 +1,22 @@
+{
+  "title": "Timeline",
+  "subtitle": "History",
+  "loading": "Loading history...",
+  "empty": "No snapshots yet. Save a chapter to create history.",
+  "preview": {
+    "loading": "Loading snapshot...",
+    "placeholder": "Select an entry to preview or restore.",
+    "emptyContent": "(empty)"
+  },
+  "action": {
+    "restore": "Restore to editor",
+    "delete": "Delete version"
+  },
+  "confirm": {
+    "delete": "Confirm deletion",
+    "deleteNote": "This action cannot be undone."
+  },
+  "deleting": "Deleting…",
+  "words": "{{count}} word",
+  "words_plural": "{{count}} words"
+}

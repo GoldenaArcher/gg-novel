@@ -1,0 +1,25 @@
+{
+  "action": {
+    "save": "保存",
+    "cancel": "取消",
+    "close": "关闭",
+    "delete": "删除",
+    "create": "创建",
+    "rename": "重命名",
+    "edit": "编辑",
+    "setActive": "设为当前"
+  },
+  "language": {
+    "toggleToChinese": "切换到中文",
+    "toggleToEnglish": "切换到英文"
+  },
+  "sidebar": {
+    "openButton": "打开侧边栏",
+    "closeButton": "关闭侧边栏",
+    "expandButton": "展开侧栏"
+  },
+  "theme": {
+    "toggleLight": "浅色模式",
+    "toggleDark": "深色模式"
+  }
+}

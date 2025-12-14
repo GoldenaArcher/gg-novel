@@ -1,0 +1,17 @@
+{
+  "currentProject": "Current Project",
+  "noDescription": "No description yet. Use Project Manager to add details.",
+  "stats": {
+    "totalWords": "Words",
+    "characters": "Characters"
+  },
+  "ideas": {
+    "title": "Ideas & Tasks",
+    "all": "All",
+    "empty": "No notes yet, start by adding a reminder."
+  },
+  "progress": {
+    "title": "Progress",
+    "overall": "Overall"
+  }
+}

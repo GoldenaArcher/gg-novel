@@ -3,9 +3,6 @@ import { TimelinePanel } from './TimelinePanel'
 import { ModalPortal } from '../../../shared/components/ModalPortal'
 import type { AppLanguage } from '../../../stores/uiStore'
 import { t, formatWordLabel } from '../../../shared/i18n'
-import { t, formatWordLabel } from '../../../shared/i18n'
-import type { AppLanguage } from '../../../stores/uiStore'
-import { t } from '../../../shared/i18n'
 
 interface EditorPanelProps {
   projectTitle?: string

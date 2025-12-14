@@ -1,0 +1,55 @@
+{
+  "pane": {
+    "explorer": "Explorer",
+    "outline": "Outline",
+    "timeline": "Timeline"
+  },
+  "action": {
+    "manageProjects": "Manage projects",
+    "newProject": "New project",
+    "newStructure": "New group",
+    "newChapter": "New chapter",
+    "deleteProject": "Delete project",
+    "timelineButton": "History"
+  },
+  "empty": {
+    "noProjects": "No projects yet. Click \"New Project\" to start writing.",
+    "outlineEmpty": "No outline available yet.",
+    "timelineEmpty": "No history available. Save a chapter to create snapshots."
+  },
+  "outline": {
+    "projectLabel": "Project Description",
+    "structureLabel": "Structure Summary",
+    "chapterLabel": "Chapter Outline",
+    "projectPlaceholder": "No description yet. Use Project Manager to add context.",
+    "structurePlaceholder": "No summary yet. Add it from the editor.",
+    "chapterPlaceholder": "No outline yet. Select a chapter and add notes in the editor."
+  },
+  "timeline": {
+    "openAll": "Open full history",
+    "emptyContent": "(empty)"
+  },
+  "placeholder": {
+    "projectName": "Enter project name",
+    "structureName": "Enter group name",
+    "chapterTitle": "Enter chapter title"
+  },
+  "confirm": {
+    "deleteProject": "Delete project \"{{title}}\"? This action cannot be undone.",
+    "deleteChapter": "Delete \"{{title}}\" and all child nodes? This action cannot be undone."
+  },
+  "prompt": {
+    "structureName": "Enter group name",
+    "chapterTitle": "Enter new chapter title"
+  },
+  "tooltip": {
+    "deleteNode": "Delete node",
+    "deleteNodeLabel": "Delete {{title}}",
+    "manageProjects": "Manage projects",
+    "newProject": "New project",
+    "newStructure": "New group",
+    "newChapter": "New chapter",
+    "deleteCurrentProject": "Delete current project",
+    "historyVersions": "History versions"
+  }
+}
