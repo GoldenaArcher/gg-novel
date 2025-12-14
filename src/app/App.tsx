@@ -6,6 +6,7 @@ import { InsightsPanel } from '../features/notes/components/InsightsPanel'
 import { ProjectManagerDialog } from '../features/library/components/ProjectManagerDialog'
 import { ThemeMode, Project, ChapterSnapshot, Chapter, StoryNodeKind } from '../shared/types'
 import { projectBridge } from '../services/ipcClient'
+import { MdClose, MdSettings } from 'react-icons/md'
 
 const patchStructureNode = (
   node: Chapter,
@@ -58,6 +59,30 @@ const getInitialTheme = (): ThemeMode => {
   return window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
 }
 
+const SIDEBAR_DEFAULT_WIDTH = 280
+
+const useMediaQuery = (query: string) => {
+  const [matches, setMatches] = useState(() => {
+    if (typeof window === 'undefined') {
+      return false
+    }
+    return window.matchMedia(query).matches
+  })
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return
+    }
+    const mediaQuery = window.matchMedia(query)
+    const handler = (event: MediaQueryListEvent) => setMatches(event.matches)
+    setMatches(mediaQuery.matches)
+    mediaQuery.addEventListener('change', handler)
+    return () => mediaQuery.removeEventListener('change', handler)
+  }, [query])
+
+  return matches
+}
+
 function App() {
   const [projects, setProjects] = useState<Project[]>([])
   const [activeProjectId, setActiveProjectId] = useState(projects[0]?.id ?? '')
@@ -92,10 +117,13 @@ function App() {
   const SIDEBAR_MIN_WIDTH = 220
   const SIDEBAR_COLLAPSE_WIDTH = 160
   const SIDEBAR_MAX_WIDTH = 420
-  const [sidebarWidth, setSidebarWidth] = useState(280)
+  const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT_WIDTH)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [resizingSidebar, setResizingSidebar] = useState(false)
+  const [sidebarOverlayOpen, setSidebarOverlayOpen] = useState(false)
   const sidebarDragRef = useRef<{ startX: number; width: number } | null>(null)
+  const isCompactLayout = useMediaQuery('(max-width: 1200px)')
+  const isSidebarCollapsed = isCompactLayout ? true : sidebarCollapsed
 
   useEffect(() => {
     projectBridge
@@ -103,6 +131,12 @@ function App() {
       .then(setProjects)
       .catch((error) => console.error('Failed to load projects', error))
   }, [])
+
+  useEffect(() => {
+    if (!isCompactLayout) {
+      setSidebarOverlayOpen(false)
+    }
+  }, [isCompactLayout])
 
   useEffect(() => {
     if (projects.length === 0) {
@@ -328,6 +362,27 @@ function App() {
     })
   }, [])
 
+  const handleSidebarProjectSelect = useCallback(
+    (projectId: string) => {
+      setActiveProjectId(projectId)
+      if (isCompactLayout) {
+        setSidebarOverlayOpen(false)
+      }
+    },
+    [isCompactLayout]
+  )
+
+  const handleSidebarChapterSelect = useCallback(
+    (chapterId: string) => {
+      setAllowChapterless(chapterId === '')
+      setActiveChapterId(chapterId)
+      if (isCompactLayout) {
+        setSidebarOverlayOpen(false)
+      }
+    },
+    [isCompactLayout]
+  )
+
   const handleCreateProject = useCallback(
     async (title: string, description?: string) => {
       const trimmedTitle = title.trim()
@@ -443,6 +498,13 @@ function App() {
     setProjects(updated)
   }, [])
 
+  const handleOpenProjectManager = useCallback(() => {
+    setIsManagerOpen(true)
+    if (isCompactLayout) {
+      setSidebarOverlayOpen(false)
+    }
+  }, [isCompactLayout])
+
   useEffect(() => {
     if (!autosaveProjectId || !autosaveChapterId) {
       setIsAutosaving(false)
@@ -491,8 +553,9 @@ function App() {
   }
 
   const startSidebarResize = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (isCompactLayout) return
     event.preventDefault()
-    const initialWidth = sidebarCollapsed ? SIDEBAR_MIN_WIDTH : sidebarWidth
+    const initialWidth = sidebarCollapsed ? SIDEBAR_DEFAULT_WIDTH : sidebarWidth
     sidebarDragRef.current = { startX: event.clientX, width: initialWidth }
     if (sidebarCollapsed) {
       setSidebarCollapsed(false)
@@ -529,92 +592,138 @@ function App() {
 
   const reopenSidebar = () => {
     setSidebarCollapsed(false)
-    setSidebarWidth(Math.max(sidebarWidth || SIDEBAR_MIN_WIDTH, SIDEBAR_MIN_WIDTH))
+    setSidebarWidth(SIDEBAR_DEFAULT_WIDTH)
   }
 
-  const sidebarColumnWidth = sidebarCollapsed ? 0 : sidebarWidth
+  const sidebarColumnWidth = isSidebarCollapsed ? 0 : sidebarWidth
   const shellStyle = {
     '--sidebar-width': `${sidebarColumnWidth}px`
   } as CSSProperties
+  const shouldShowFloatingToggle = isCompactLayout || isSidebarCollapsed
+
+  const handleFloatingButtonClick = () => {
+    if (isCompactLayout) {
+      setSidebarOverlayOpen(true)
+    } else {
+      reopenSidebar()
+    }
+  }
+
+  const closeSidebarOverlay = () => setSidebarOverlayOpen(false)
 
   return (
-    <div className={`app-shell${sidebarCollapsed ? ' sidebar-collapsed' : ''}`} style={shellStyle}>
-      <div className={`sidebar-container${sidebarCollapsed ? ' collapsed' : ''}`}>
-        {!sidebarCollapsed ? (
-          <LibrarySidebar
-            projects={projectsView}
-            activeProjectId={activeProjectId}
-            activeChapterId={activeChapterId}
-            snapshots={timelineEntries}
-            onProjectSelect={setActiveProjectId}
-            onChapterSelect={(chapterId) => {
-              setAllowChapterless(chapterId === '')
-              setActiveChapterId(chapterId)
-            }}
-            onCreateProject={handleCreateProject}
-            onCreateChapter={handleCreateChapter}
-            onOpenProjectManager={() => setIsManagerOpen(true)}
-            onReorderProjects={handleReorderProjects}
-            onDeleteProject={handleDeleteProject}
-            onDeleteChapter={handleDeleteChapter}
-            onReorderChapters={handleReorderChapters}
-            onMoveChapter={handleMoveChapter}
-            onOpenTimeline={openTimeline}
-          />
-        ) : (
-          <button className="sidebar-expand-button" type="button" onClick={reopenSidebar}>
-            展开侧栏
-          </button>
+    <>
+      {shouldShowFloatingToggle && (
+        <button className="floating-sidebar-button" type="button" onClick={handleFloatingButtonClick} aria-label="打开侧边栏">
+          <MdSettings size={20} aria-hidden="true" />
+        </button>
+      )}
+      <div className={`app-shell${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`} style={shellStyle}>
+        <div className={`sidebar-container${isSidebarCollapsed ? ' collapsed' : ''}${isCompactLayout ? ' hidden' : ''}`}>
+          {!isCompactLayout && !sidebarCollapsed ? (
+            <LibrarySidebar
+              projects={projectsView}
+              activeProjectId={activeProjectId}
+              activeChapterId={activeChapterId}
+              snapshots={timelineEntries}
+              onProjectSelect={handleSidebarProjectSelect}
+              onChapterSelect={handleSidebarChapterSelect}
+              onCreateProject={handleCreateProject}
+              onCreateChapter={handleCreateChapter}
+              onOpenProjectManager={handleOpenProjectManager}
+              onReorderProjects={handleReorderProjects}
+              onDeleteProject={handleDeleteProject}
+              onDeleteChapter={handleDeleteChapter}
+              onReorderChapters={handleReorderChapters}
+              onMoveChapter={handleMoveChapter}
+              onOpenTimeline={openTimeline}
+            />
+          ) : (
+            !isCompactLayout && (
+              <button className="sidebar-expand-button" type="button" onClick={reopenSidebar}>
+                展开侧栏
+              </button>
+            )
+          )}
+        </div>
+
+        {!isCompactLayout && (
+          <div className={`sidebar-resizer${isSidebarCollapsed ? ' hidden' : ''}`} onMouseDown={startSidebarResize} />
         )}
-      </div>
 
-      <div className={`sidebar-resizer${sidebarCollapsed ? ' hidden' : ''}`} onMouseDown={startSidebarResize} />
+        <div className="editor-container">
+          <EditorPanel
+            projectTitle={activeProjectView?.title}
+            chapter={activeChapterView}
+            draftText={draftText}
+            onDraftChange={setDraftText}
+            isAutosaving={isAutosaving}
+            autosaveTimestamp={lastAutosaveAt}
+            currentTime={nowTick}
+            isTimelineOpen={isTimelineOpen}
+            timelineEntries={timelineEntries}
+            timelineLoading={timelineLoading}
+            selectedSnapshot={selectedSnapshot ?? undefined}
+            snapshotPreview={snapshotPreview ?? undefined}
+            snapshotPreviewLoading={snapshotPreviewLoading}
+            onOpenTimeline={openTimeline}
+            onCloseTimeline={closeTimeline}
+            onSelectSnapshot={handleSelectSnapshot}
+            onRestoreSnapshot={handleRestoreSnapshot}
+            onDeleteSnapshot={handleDeleteSnapshot}
+            deletingSnapshot={deletingSnapshot}
+            disableTimeline={isManagerOpen}
+            theme={theme}
+            onToggleTheme={handleThemeToggle}
+            onSaveChapter={handleChapterSave}
+          />
+        </div>
 
-      <div className="editor-container">
-        <EditorPanel
-          projectTitle={activeProjectView?.title}
-          chapter={activeChapterView}
-          draftText={draftText}
-          onDraftChange={setDraftText}
-          isAutosaving={isAutosaving}
-          autosaveTimestamp={lastAutosaveAt}
-          currentTime={nowTick}
-          isTimelineOpen={isTimelineOpen}
-          timelineEntries={timelineEntries}
-          timelineLoading={timelineLoading}
-          selectedSnapshot={selectedSnapshot ?? undefined}
-          snapshotPreview={snapshotPreview ?? undefined}
-          snapshotPreviewLoading={snapshotPreviewLoading}
-          onOpenTimeline={openTimeline}
-          onCloseTimeline={closeTimeline}
-          onSelectSnapshot={handleSelectSnapshot}
-          onRestoreSnapshot={handleRestoreSnapshot}
-          onDeleteSnapshot={handleDeleteSnapshot}
-          deletingSnapshot={deletingSnapshot}
-          disableTimeline={isManagerOpen}
-          theme={theme}
-          onToggleTheme={handleThemeToggle}
-          onSaveChapter={handleChapterSave}
+        <div className="details-container">
+          <InsightsPanel project={activeProjectView ?? undefined} notes={activeProjectView?.notes} progress={activeProjectView?.progress} />
+        </div>
+
+        <ProjectManagerDialog
+          open={isManagerOpen}
+          onClose={() => setIsManagerOpen(false)}
+          projects={projects}
+          activeProjectId={activeProjectId}
+          onCreate={handleCreateProject}
+          onRename={handleRenameProject}
+          onDelete={handleDeleteProject}
+          onReorder={handleReorderProjects}
+          onSelect={setActiveProjectId}
+          onUpdateDescription={handleUpdateDescription}
         />
       </div>
-
-      <div className="details-container">
-        <InsightsPanel project={activeProjectView ?? undefined} notes={activeProjectView?.notes} progress={activeProjectView?.progress} />
-      </div>
-
-      <ProjectManagerDialog
-        open={isManagerOpen}
-        onClose={() => setIsManagerOpen(false)}
-        projects={projects}
-        activeProjectId={activeProjectId}
-        onCreate={handleCreateProject}
-        onRename={handleRenameProject}
-        onDelete={handleDeleteProject}
-        onReorder={handleReorderProjects}
-        onSelect={setActiveProjectId}
-        onUpdateDescription={handleUpdateDescription}
-      />
-    </div>
+      {isCompactLayout && sidebarOverlayOpen && (
+        <div className="sidebar-overlay" role="dialog" aria-modal="true">
+          <div className="sidebar-overlay__backdrop" onClick={closeSidebarOverlay} />
+          <div className="sidebar-overlay__panel">
+            <button className="sidebar-overlay__close icon-button subtle" type="button" onClick={closeSidebarOverlay} aria-label="关闭侧边栏">
+              <MdClose size={18} aria-hidden="true" />
+            </button>
+            <LibrarySidebar
+              projects={projectsView}
+              activeProjectId={activeProjectId}
+              activeChapterId={activeChapterId}
+              snapshots={timelineEntries}
+              onProjectSelect={handleSidebarProjectSelect}
+              onChapterSelect={handleSidebarChapterSelect}
+              onCreateProject={handleCreateProject}
+              onCreateChapter={handleCreateChapter}
+              onOpenProjectManager={handleOpenProjectManager}
+              onReorderProjects={handleReorderProjects}
+              onDeleteProject={handleDeleteProject}
+              onDeleteChapter={handleDeleteChapter}
+              onReorderChapters={handleReorderChapters}
+              onMoveChapter={handleMoveChapter}
+              onOpenTimeline={openTimeline}
+            />
+          </div>
+        </div>
+      )}
+    </>
   )
 }
 
