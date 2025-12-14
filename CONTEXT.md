@@ -193,43 +193,6 @@ This document describes the higher-level goals, responsibilities, and current im
 - **Export/import**: No data export/import functionality yet
 - **Collaborative editing**: Single-user only, no real-time collaboration
 
-## Refactoring Roadmap
-
-### Stage 1: Project State Migration ✅ **COMPLETED**
-- **Status**: Complete
-- **Branch**: `refactor-to-zustand`
-- **Changes**:
-  - Introduced Zustand for state management
-  - Migrated 4 project-related states from App.tsx to projectStore
-  - Reduced App.tsx from 731 to 674 lines (-7.8%)
-  - Fixed infinite loop bug with useMemo pattern
-  - Added ErrorBoundary for production error handling
-  - Updated all code comments to English
-  - Fixed group node selection (both groups and chapters can now be selected)
-- **Documentation**: See `STAGE1_DOCUMENTATION.md` for detailed implementation notes
-
-### Stage 2: Editor State Migration ✅ **COMPLETED**
-- **Status**: Complete
-- **Branch**: `refactor-to-zustand`
-- **Changes**:
-  - Created editorStore with 11 editor-related states
-  - Migrated draft text, autosave status, and timeline features
-  - Integrated with App.tsx using `useShallow` for optimized subscriptions
-  - Separated editor concerns from layout concerns
-- **Result**: App.tsx now has only 7 useState (down from 22, -68% reduction!)
-- **States migrated**: `draftText`, `isAutosaving`, `lastAutosaveAt`, `nowTick`, `isTimelineOpen`, `timelineEntries`, `timelineLoading`, `selectedSnapshot`, `snapshotPreview`, `snapshotPreviewLoading`, `deletingSnapshot`
-
-### Stage 3: UI State Migration ⏸️ **OPTIONAL/DEFERRED**
-- **Status**: Deferred (may not be necessary)
-- **Rationale**: 
-  - Remaining states are primarily UI/layout related (theme, sidebar dimensions)
-  - Sidebar state involves complex DOM operations best kept in the component
-  - Current architecture is clean with business logic in stores, UI logic in components
-- **Remaining states in App.tsx**: 
-  - `theme`, `isManagerOpen` (simple UI toggles)
-  - Sidebar: `sidebarWidth`, `sidebarCollapsed`, `resizingSidebar`, `sidebarOverlayOpen`, `sidebarDragRef`
-- **Potential approach if needed**: Only migrate `theme` and `isManagerOpen` to a simple uiStore; keep sidebar state in App.tsx as it's tightly coupled to layout
-
 ## Development Notes
 
 - **TypeScript**: Strict mode enabled; CSS custom properties should be typed with `as CSSProperties` pattern
@@ -237,17 +200,23 @@ This document describes the higher-level goals, responsibilities, and current im
 - **Styling approach**: SCSS with token-based design system, component-specific styles co-located
 - **Build tooling**: Vite for renderer, electron-builder for packaging
 - **Testing**: No test framework configured yet
-- **State management**: Zustand-based architecture (Stage 1 & 2 complete)
+- **State management**: Zustand-based architecture (All stages complete)
   - `projectStore`: Project and chapter management
   - `editorStore`: Draft, autosave, and timeline features
-  - App.tsx: Layout coordination and UI state
+  - `uiStore`: Theme and UI layout state
+  - Custom hooks: Feature-specific business logic
+  - App.tsx: Layout coordination only
 - **Performance patterns**: 
   - Use `useMemo` for expensive computations (e.g., `getProjectsWithLiveDraft`)
   - Use `useShallow` from zustand/shallow for optimized multi-property subscriptions
   - Avoid creating new object references in Zustand selectors
   - Export pure utility functions from stores for component use
+  - Custom hooks encapsulate complex logic with useCallback
 - **Code organization**:
-  - Business logic → Zustand stores
+  - State management → Zustand stores (`src/stores/`)
+  - Business logic → Custom hooks (`src/features/*/hooks/`)
+  - UI components → Feature components (`src/features/*/components/`)
+  - Layout coordination → App.tsx
   - UI/Layout logic → Components
   - Shared utilities → Exported pure functions
 

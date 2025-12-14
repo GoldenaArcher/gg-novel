@@ -12,7 +12,18 @@ import {
   MdOutlinePlaylistAdd
 } from 'react-icons/md'
 import { FaArrowDown, FaArrowRight } from 'react-icons/fa'
+import { useShallow } from 'zustand/shallow'
 import type { Chapter, ChapterSnapshot, Project, StoryNodeKind } from '../../../shared/types'
+import { useUiStore } from '../../../stores/uiStore'
+import {
+  t,
+  formatWordLabel,
+  formatChapterLabel,
+  formatConfirmDeleteProject,
+  formatConfirmDeleteChapter,
+  formatPromptStructure,
+  formatEmptyContent
+} from '../../../shared/i18n'
 
 type NodeCreation = { projectId: string; parentId: string | null; kind: StoryNodeKind }
 type PaneKey = 'explorer' | 'outline' | 'timeline'
@@ -147,7 +158,13 @@ export const LibrarySidebar = ({
   const newProjectInputRef = useRef<HTMLInputElement>(null)
   const [draggingProjectId, setDraggingProjectId] = useState<string | null>(null)
   const projectListRef = useRef<HTMLDivElement>(null)
-  const [paneOpen, setPaneOpen] = useState({ explorer: true, outline: true, timeline: true })
+  const { paneOpen, setPaneVisibility, language } = useUiStore(
+    useShallow((state) => ({
+      paneOpen: state.paneOpen,
+      setPaneVisibility: state.setPaneOpen,
+      language: state.language
+    }))
+  )
   const [expandedProjects, setExpandedProjects] = useState<Record<string, boolean>>({})
   const [expandedNodes, setExpandedNodes] = useState<Record<string, boolean>>({})
   const [nodeCreation, setNodeCreation] = useState<NodeCreation | null>(null)
@@ -192,13 +209,13 @@ export const LibrarySidebar = ({
   useEffect(() => {
     const maybeCollapse = (key: PaneKey) => {
       if (paneOpen[key] && paneHeights[key] < COLLAPSE_THRESHOLD) {
-        setPaneOpen((prev) => ({ ...prev, [key]: false }))
+        setPaneVisibility(key, false)
       }
     }
     maybeCollapse('explorer')
     maybeCollapse('outline')
     maybeCollapse('timeline')
-  }, [paneHeights, paneOpen])
+  }, [paneHeights, paneOpen, setPaneVisibility])
   useLayoutEffect(() => {
     if (paneInitialized) return
     const el = panelGroupRef.current
@@ -339,13 +356,11 @@ export const LibrarySidebar = ({
   }, [outlineItems, activeChapterId])
 
   const togglePane = (pane: PaneKey) => {
-    setPaneOpen((prev) => {
-      const nextState = !prev[pane]
-      if (nextState) {
-        setPaneHeights((sizes) => ({ ...sizes, [pane]: Math.max(MIN_PANE_HEIGHT, sizes[pane]) }))
-      }
-      return { ...prev, [pane]: nextState }
-    })
+    const nextState = !paneOpen[pane]
+    if (nextState) {
+      setPaneHeights((sizes) => ({ ...sizes, [pane]: Math.max(MIN_PANE_HEIGHT, sizes[pane]) }))
+    }
+    setPaneVisibility(pane, nextState)
   }
 
   const toggleProject = (projectId: string) => {
@@ -419,14 +434,14 @@ export const LibrarySidebar = ({
   const paneTemplate = `${getPaneHeight('explorer')}px ${resizer1}px ${getPaneHeight('outline')}px ${resizer2}px ${getPaneHeight('timeline')}px`
 
   const requestProjectDelete = async (projectId: string, title: string) => {
-    const confirmed = window.confirm(`确认删除作品「${title}」？该操作不可撤销。`)
+    const confirmed = window.confirm(formatConfirmDeleteProject(language, title))
     if (confirmed) {
       await onDeleteProject(projectId)
     }
   }
 
   const requestChapterDelete = async (projectId: string, chapterId: string, title: string) => {
-    const confirmed = window.confirm(`确认删除「${title}」及其子节点？该操作不可撤销。`)
+    const confirmed = window.confirm(formatConfirmDeleteChapter(language, title))
     if (confirmed) {
       await onDeleteChapter(projectId, chapterId)
     }
@@ -581,7 +596,7 @@ export const LibrarySidebar = ({
         <input
           ref={nodeInputRef}
           value={newNodeTitle}
-          placeholder={nodeCreation.kind === 'group' ? '输入结构名称' : '输入章节标题'}
+          placeholder={formatPromptStructure(language, nodeCreation.kind)}
           onChange={(event) => setNewNodeTitle(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === 'Enter') {
@@ -595,10 +610,10 @@ export const LibrarySidebar = ({
         />
         <div className="chapter-create-actions">
           <button className="mini primary" type="button" onClick={submitCreateNode}>
-            保存
+            {t(language, 'actionSave')}
           </button>
           <button className="mini ghost" type="button" onClick={cancelCreateNode}>
-            取消
+            {t(language, 'actionCancel')}
           </button>
         </div>
       </div>
@@ -651,8 +666,9 @@ export const LibrarySidebar = ({
       }}
       onDrop={(event) => handleContainerDrop(event, projectId, parentId, nodes)}
     >
-      {renderNodeCreation(projectId, parentId, depth)}
       {nodes.map((node) => renderNode(projectId, node, parentId, nodes, depth))}
+      {/* Keep creation input after siblings so it appears near the intended insertion point */}
+      {renderNodeCreation(projectId, parentId, depth)}
     </div>
   )
 
@@ -661,8 +677,11 @@ export const LibrarySidebar = ({
     const isActive = node.id === activeChapterId && projectId === activeProjectId
     const wordsLabel =
       node.kind === 'chapter'
-        ? `${node.words.toLocaleString()} 字`
-        : `${flattenOutline(node.children ?? []).filter((item) => item.kind === 'chapter').length} 章节`
+        ? formatWordLabel(language, node.words)
+        : formatChapterLabel(
+            language,
+            flattenOutline(node.children ?? []).filter((item) => item.kind === 'chapter').length
+          )
     const indent = depth * 22 + 8
 
     return (
@@ -709,8 +728,8 @@ export const LibrarySidebar = ({
           <button
             className="icon-button danger subtle node-delete"
             type="button"
-            title="删除节点"
-            aria-label={`删除 ${node.title}`}
+            title={t(language, 'actionDelete')}
+            aria-label={`${t(language, 'actionDelete')} ${node.title}`}
             onClick={() => requestChapterDelete(projectId, node.id, node.title)}
           >
             <MdDelete size={16} aria-hidden="true" />
@@ -743,7 +762,7 @@ export const LibrarySidebar = ({
           </button>
           <button className="tree-node__label" type="button" onClick={() => focusProject(project.id)}>
             <span>{project.title}</span>
-            <span className="tree-node__meta">{project.stats.words.toLocaleString()} 字</span>
+            <span className="tree-node__meta">{formatWordLabel(language, project.stats.words)}</span>
           </button>
         </div>
         {isExpanded && renderNodeList(project.id, project.structure ?? [], null)}
@@ -757,16 +776,17 @@ export const LibrarySidebar = ({
         <div className={`pane${paneOpen.explorer ? ' expanded' : ' collapsed'}`}>
           <div className="pane-header">
             <button type="button" onClick={() => togglePane('explorer')}>
-              {paneOpen.explorer ? <MdExpandMore size={18} /> : <MdChevronRight size={18} />} Explorer
+              {paneOpen.explorer ? <MdExpandMore size={18} /> : <MdChevronRight size={18} />}{' '}
+              {t(language, 'paneExplorerTitle')}
             </button>
             <div className="pane-toolbar">
-              <button className="icon-button" type="button" title="管理作品" onClick={onOpenProjectManager}>
+              <button className="icon-button" type="button" title={t(language, 'sidebarManageProjects')} onClick={onOpenProjectManager}>
                 <MdOutlinePlaylistAdd size={18} />
               </button>
               <button
                 className="icon-button"
                 type="button"
-                title="新建作品"
+                title={t(language, 'sidebarNewProject')}
                 onClick={() => setCreatingProject(true)}
                 disabled={creatingProject}
               >
@@ -780,14 +800,14 @@ export const LibrarySidebar = ({
                 <div className="explorer-actions">
                   <button
                     type="button"
-                    title="新建结构"
+                    title={t(language, 'sidebarNewStructure')}
                     onClick={() => startCreateNode(activeProject.id, null, 'group')}
                   >
                     <MdOutlineCreateNewFolder size={18} aria-hidden="true" />
                   </button>
                   <button
                     type="button"
-                    title="新建章节"
+                    title={t(language, 'sidebarNewChapter')}
                     onClick={() => startCreateNode(activeProject.id, null, 'chapter')}
                   >
                     <MdOutlineNoteAdd size={18} aria-hidden="true" />
@@ -795,7 +815,7 @@ export const LibrarySidebar = ({
                   <button
                     type="button"
                     className="danger"
-                    title="删除当前作品"
+                    title={t(language, 'sidebarDeleteProject')}
                     onClick={() => requestProjectDelete(activeProject.id, activeProject.title)}
                   >
                     <MdDelete size={18} aria-hidden="true" />
@@ -816,7 +836,7 @@ export const LibrarySidebar = ({
                     <input
                       ref={newProjectInputRef}
                       value={newProjectTitle}
-                      placeholder="输入作品名称"
+                      placeholder={t(language, 'placeholderProjectName')}
                       onChange={(event) => setNewProjectTitle(event.target.value)}
                       onKeyDown={(event) => {
                         if (event.key === 'Enter') {
@@ -831,7 +851,7 @@ export const LibrarySidebar = ({
                   </div>
                 )}
                 {projects.map((project) => renderProjectNode(project))}
-                {projects.length === 0 && <p className="muted">暂无作品，点击“新建作品”开始创作。</p>}
+                {projects.length === 0 && <p className="muted">{t(language, 'sidebarNoProjects')}</p>}
               </div>
             </div>
           )}
@@ -846,28 +866,29 @@ export const LibrarySidebar = ({
         <div className={`pane${paneOpen.outline ? ' expanded' : ' collapsed'}`}>
           <div className="pane-header">
             <button type="button" onClick={() => togglePane('outline')}>
-              {paneOpen.outline ? <MdExpandMore size={18} /> : <MdChevronRight size={18} />} Outline
+              {paneOpen.outline ? <MdExpandMore size={18} /> : <MdChevronRight size={18} />}{' '}
+              {t(language, 'paneOutlineTitle')}
             </button>
           </div>
           {paneOpen.outline && (
             <div className="pane-body outline-pane">
               {!selectedOutline ? (
-                <p className="muted">暂无可用的大纲内容。</p>
+                <p className="muted">{t(language, 'sidebarOutlineEmpty')}</p>
               ) : (
                 <article className="outline-detail">
                   <p className="outline-detail__label">
                     {selectedOutline.kind === 'project'
-                      ? '作品简介'
+                      ? t(language, 'sidebarOutlineProjectLabel')
                       : selectedOutline.kind === 'group'
-                      ? '结构摘要'
-                      : '章节大纲'}
+                      ? t(language, 'sidebarOutlineStructureLabel')
+                      : t(language, 'sidebarOutlineChapterLabel')}
                   </p>
                   <h4>{selectedOutline.title}</h4>
                   <p className="outline-summary">
                     {selectedOutline.summary?.trim() ||
                       (selectedOutline.kind === 'project'
-                        ? '暂无简介，使用项目管理为作品添加描述。'
-                        : '暂无大纲，点击章节后在编辑区添加摘要。')}
+                        ? t(language, 'sidebarOutlineProjectPlaceholder')
+                        : t(language, 'sidebarOutlineChapterPlaceholder'))}
                   </p>
                 </article>
               )}
@@ -884,10 +905,11 @@ export const LibrarySidebar = ({
         <div className={`pane${paneOpen.timeline ? ' expanded' : ' collapsed'}`}>
           <div className="pane-header">
             <button type="button" onClick={() => togglePane('timeline')}>
-              {paneOpen.timeline ? <MdExpandMore size={18} /> : <MdChevronRight size={18} />} Timeline
+              {paneOpen.timeline ? <MdExpandMore size={18} /> : <MdChevronRight size={18} />}{' '}
+              {t(language, 'paneTimelineTitle')}
             </button>
             <div className="pane-toolbar">
-              <button className="icon-button" type="button" title="历史版本" onClick={onOpenTimeline}>
+              <button className="icon-button" type="button" title={t(language, 'sidebarTimelineButton')} onClick={onOpenTimeline}>
                 <MdHistory size={18} />
               </button>
             </div>
@@ -895,7 +917,7 @@ export const LibrarySidebar = ({
           {paneOpen.timeline && (
             <div className="pane-body timeline-pane">
               {snapshots.length === 0 ? (
-                <p className="muted">暂无历史版本，保存章节后将生成快照。</p>
+                <p className="muted">{t(language, 'sidebarTimelineEmpty')}</p>
               ) : (
                 <div className="timeline-list">
                   {snapshots.slice(0, 6).map((entry) => (
@@ -903,17 +925,17 @@ export const LibrarySidebar = ({
                       key={entry.timestamp}
                       className="timeline-row"
                       type="button"
-                      title={entry.preview || '（空内容）'}
+                      title={entry.preview || formatEmptyContent(language)}
                       onClick={onOpenTimeline}
                     >
                       <span>{formatTimestamp(entry.timestamp)}</span>
-                      <span className="timeline-meta">{entry.words.toLocaleString()} 字</span>
+                      <span className="timeline-meta">{formatWordLabel(language, entry.words)}</span>
                     </button>
                   ))}
                 </div>
               )}
               <button className="mini ghost" type="button" onClick={onOpenTimeline}>
-                打开全部历史版本
+                {t(language, 'sidebarTimelineOpenAll')}
               </button>
             </div>
           )}

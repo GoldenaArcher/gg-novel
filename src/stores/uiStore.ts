@@ -13,6 +13,9 @@
 import { create } from 'zustand'
 import type { ThemeMode } from '../shared/types'
 
+export type AppLanguage = 'en' | 'zh'
+export type PaneKey = 'explorer' | 'outline' | 'timeline'
+
 /**
  * Get initial theme from localStorage or system preference
  * @returns {ThemeMode} 'light' or 'dark' theme mode
@@ -27,6 +30,21 @@ const getInitialTheme = (): ThemeMode => {
   }
   // Fall back to system preference
   return window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
+}
+
+/**
+ * Determine the initial language preference.
+ * Defaults to Chinese for zh locales, English otherwise.
+ */
+const getInitialLanguage = (): AppLanguage => {
+  if (typeof window === 'undefined') {
+    return 'en'
+  }
+  const stored = window.localStorage.getItem('gg-language')
+  if (stored === 'en' || stored === 'zh') {
+    return stored
+  }
+  return window.navigator.language.toLowerCase().startsWith('zh') ? 'zh' : 'en'
 }
 
 // Sidebar dimension constants - exported for use across components
@@ -53,6 +71,10 @@ interface UiState {
   resizingSidebar: boolean
   /** Whether the sidebar overlay is open (mobile/compact layout only) */
   sidebarOverlayOpen: boolean
+  /** Current UI language */
+  language: AppLanguage
+  /** Persisted open/closed state for each sidebar pane */
+  paneOpen: Record<PaneKey, boolean>
 
   // ===== Theme Actions =====
   /** Set theme to specific mode and persist to localStorage */
@@ -73,6 +95,12 @@ interface UiState {
   setResizingSidebar: (resizing: boolean) => void
   /** Open or close the sidebar overlay (mobile/compact layout) */
   setSidebarOverlayOpen: (open: boolean) => void
+  /** Set the UI language and persist preference */
+  setLanguage: (language: AppLanguage) => void
+  /** Toggle between English and Chinese */
+  toggleLanguage: () => void
+  /** Persist pane open/closed flag */
+  setPaneOpen: (pane: PaneKey, open: boolean) => void
 }
 
 export const useUiStore = create<UiState>((set) => ({
@@ -82,6 +110,12 @@ export const useUiStore = create<UiState>((set) => ({
   sidebarCollapsed: false,
   resizingSidebar: false,
   sidebarOverlayOpen: false,
+  language: getInitialLanguage(),
+  paneOpen: {
+    explorer: true,
+    outline: true,
+    timeline: true
+  },
 
   setTheme: (mode) => set({ theme: mode }),
   toggleTheme: () => set((state) => ({ theme: state.theme === 'dark' ? 'light' : 'dark' })),
@@ -89,6 +123,26 @@ export const useUiStore = create<UiState>((set) => ({
   setSidebarWidth: (width) => set({ sidebarWidth: width }),
   setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
   setResizingSidebar: (resizing) => set({ resizingSidebar: resizing }),
-  setSidebarOverlayOpen: (open) => set({ sidebarOverlayOpen: open })
+  setSidebarOverlayOpen: (open) => set({ sidebarOverlayOpen: open }),
+  setLanguage: (language) => {
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('gg-language', language)
+    }
+    set({ language })
+  },
+  toggleLanguage: () =>
+    set((state) => {
+      const next = state.language === 'zh' ? 'en' : 'zh'
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem('gg-language', next)
+      }
+      return { language: next }
+    }),
+  setPaneOpen: (pane, open) =>
+    set((state) => ({
+      paneOpen: {
+        ...state.paneOpen,
+        [pane]: open
+      }
+    }))
 }))
-
